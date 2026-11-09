@@ -24,6 +24,21 @@ let cloudReady = false;
 let cloudTimer = null;
 let ignoreRemoteUntil = 0;
 
+const GARMENT_KINDS = [
+  "Blusa",
+  "Camisa",
+  "Pantalón",
+  "Pans",
+  "Jean",
+  "Saco",
+  "V. casual",
+  "V. fiesta",
+  "Novia",
+  "XV años",
+  "Falda",
+  "Otro",
+];
+
 let state = load();
 persist();
 
@@ -271,18 +286,27 @@ function normalizeJob(job) {
   job.presupuesto = job.presupuesto || 0;
   job.measures = job.measures || {};
   if (!Array.isArray(job.garments) || !job.garments.length) {
-    job.garments = [{ id: uid(), name: job.type || "Prenda", note: "", price: Number(job.price) || 0, done: false }];
+    job.garments = [{ id: uid(), name: "", kind: "", custom: "", color: "", note: "", price: Number(job.price) || 0, done: false }];
   }
-  job.garments = job.garments.map((item) => ({
-    id: item.id || uid(),
-    name: item.name || "",
-    note: item.note || "",
-    nameDrawing: item.nameDrawing || "",
-    noteDrawing: item.noteDrawing || "",
-    photo: item.photo || "",
-    price: item.price || 0,
-    done: !!item.done,
-  }));
+  job.garments = job.garments.map((item) => {
+    const known = GARMENT_KINDS.find((kind) => kind.toLowerCase() === String(item.kind || item.name || "").trim().toLowerCase());
+    const kind = item.kind || known || (item.name ? "Otro" : "");
+    const custom = item.custom || (kind === "Otro" && !known ? item.name || "" : "");
+    const next = {
+      id: item.id || uid(),
+      kind,
+      custom,
+      color: item.color || "",
+      note: item.note || "",
+      nameDrawing: item.nameDrawing || "",
+      noteDrawing: item.noteDrawing || "",
+      photo: item.photo || "",
+      price: item.price || 0,
+      done: !!item.done,
+    };
+    next.name = garmentTitle(next);
+    return next;
+  });
   job.price = job.garments.reduce((sum, item) => sum + amount(item.price), 0);
   return job;
 }
@@ -511,10 +535,26 @@ function codesReady() {
   return Boolean(access.mom && access.andres && access.dad);
 }
 
+function garmentTitle(item) {
+  if (!item) return "";
+  if (item.kind === "Otro") return String(item.custom || "").trim() || "Otro";
+  if (item.kind) return item.kind;
+  return String(item.name || "").trim();
+}
+
+function garmentLabel(item) {
+  const title = garmentTitle(item) || "Prenda";
+  const color = String(item?.color || "").trim();
+  return color ? `${title} · ${color}` : title;
+}
+
+function phoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
 function balance(job) {
   const extra = job.urgent ? amount(job.urgencyFee) : 0;
-  const price = (job.garments || []).reduce((sum, item) => sum + amount(item.price), 0);
-  return price + extra - amount(job.deposit);
+  return amount(job.presupuesto) - amount(job.deposit) + extra;
 }
 
 function charged(job) {
@@ -599,7 +639,21 @@ function bodyClass() {
   return names.join(" ");
 }
 
+function captureCita() {
+  const form = document.querySelector("[data-form=cita]");
+  if (!form) return;
+  const data = Object.fromEntries(new FormData(form));
+  ui.apptDraft = {
+    person: data.person || "",
+    jobId: data.jobId || "",
+    date: data.date || ui.day,
+    time: data.time || "10:00",
+    kind: data.kind || "Prueba",
+  };
+}
+
 function render() {
+  if (ui.panel === "cita") captureCita();
   if (ui.cloud === "conectando" || ui.cloud === "entrar") {
     document.body.className = bodyClass();
     document.getElementById("app").innerHTML = nubeHtml();
@@ -624,7 +678,7 @@ function entradaHtml() {
     <section class="gate">
       <p class="kicker">Sueil</p>
       <h1>Código de acceso</h1>
-      <p>Mamá, papá o Andrés. Cada quien entra con el suyo.</p>
+      <p>Mamá, Oscar o Andrés. Cada quien entra con el suyo.</p>
       <form class="form" data-form="entrar" style="margin-top:18px">
         <label>Código<input name="code" type="password" required autocomplete="off"></label>
         ${ui.badCode ? `<p class="warn">Ese código no es de la familia.</p>` : ""}
@@ -668,13 +722,13 @@ function ajustesHtml() {
     <p class="section-title">Tres entradas</p>
     <p class="meta">Mamá, papá y Andrés tienen cada uno su correo y su contraseña. Este aparato entró con ${esc(ui.cloudEmail || "nadie")}.</p>
     ${profileForm("mom", "Mamá")}
-    ${profileForm("dad", "Papá")}
+    ${profileForm("dad", "Oscar")}
     ${profileForm("andres", "Andrés")}
     <p class="section-title">Códigos de la agenda</p>
     <p class="meta">Son aparte del correo. Sirven para saber quién abrió la agenda en un aparato que ya entró.</p>
     <form class="form" data-form="codigos">
       <label>Código de mamá<input name="mom" type="password" required value="${esc(access.mom)}" autocomplete="off"></label>
-      <label>Código de papá<input name="dad" type="password" required value="${esc(access.dad)}" autocomplete="off"></label>
+      <label>Código de Oscar<input name="dad" type="password" required value="${esc(access.dad)}" autocomplete="off"></label>
       <label>Código de Andrés<input name="andres" type="password" required value="${esc(access.andres)}" autocomplete="off"></label>
       ${ui.codeError ? `<p class="warn">${esc(ui.codeError)}</p>` : ""}
       <button class="btn" type="submit">Guardar códigos</button>
@@ -775,7 +829,7 @@ function jobCard(job) {
       ${statusBadges(job, "Esta semana")}
       <div class="who">${esc(client ? client.name : "Clienta")}</div>
       <div class="meta">${esc(job.type)} · entrega ${esc(when(job.dueDate, job.dueTime))}</div>
-      <div class="meta">${esc(pendingText(job))} · resta ${esc(money(balance(job)))}${job.urgent && job.urgencyFee ? ` · urgencia ${esc(money(job.urgencyFee))}` : ""}</div>
+      <div class="meta">${esc(pendingText(job))} · total a pagar ${esc(money(balance(job)))}${job.urgent && job.urgencyFee ? ` · urgencia ${esc(money(job.urgencyFee))}` : ""}</div>
     </button>`;
 }
 
@@ -806,6 +860,7 @@ function agendaHtml() {
   const citas = state.appointments
     .filter((a) => a.date === ui.day)
     .sort((a, b) => a.time.localeCompare(b.time));
+  const todas = [...state.appointments].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   return `
     <h2>Agenda</h2>
     <p class="lede">Siete días, con la hora del taller.</p>
@@ -818,8 +873,13 @@ function agendaHtml() {
     </div>
     <div class="row"><button class="btn" data-panel="cita">Nueva cita</button></div>
     ${panelHtml()}
-    <div class="cards" style="margin-top:14px">
+    <p class="section-title">Este día</p>
+    <div class="cards">
       ${citas.length ? citas.map(citaCard).join("") : `<p class="empty">Este día no tiene citas.</p>`}
+    </div>
+    <p class="section-title">Todas las citas</p>
+    <div class="cards">
+      ${todas.length ? todas.map(citaCard).join("") : `<p class="empty">Todavía no hay citas.</p>`}
     </div>`;
 }
 
@@ -886,36 +946,36 @@ function jobEditor(job, jobs) {
           <label>Fecha de entrega<input type="date" data-field="dueDate" value="${esc(job.dueDate)}"></label>
           <label>Hora de entrega<input type="time" data-field="dueTime" value="${esc(job.dueTime)}"></label>
         </div>
-        <div class="row">
-          <div>
-            <button class="num ${padOpen("presupuesto") ? "on" : ""}" type="button" data-num="presupuesto">Presupuesto <b>${esc(money(amount(job.presupuesto)))}</b></button>
-            ${padAfter("presupuesto")}
-          </div>
-          <div>
-            <button class="num ${padOpen("deposit") ? "on" : ""}" type="button" data-num="deposit">Anticipo <b>${esc(money(amount(job.deposit)))}</b></button>
-            ${padAfter("deposit")}
-          </div>
-        </div>
+        <button class="num ${padOpen("presupuesto") ? "on" : ""}" type="button" data-num="presupuesto">Presupuesto <b>${esc(money(amount(job.presupuesto)))}</b></button>
+        ${padAfter("presupuesto")}
+        <button class="num ${padOpen("deposit") ? "on" : ""}" type="button" data-num="deposit">Anticipo <b>${esc(money(amount(job.deposit)))}</b></button>
+        ${padAfter("deposit")}
         <label class="check"><input type="checkbox" data-urgent ${job.urgent ? "checked" : ""}> Marcar como urgente</label>
-        ${job.urgent ? `<button class="num ${padOpen("urgency") ? "on" : ""}" type="button" data-num="urgency">Cargo de urgencia <b>${esc(money(amount(job.urgencyFee)))}</b></button>${padAfter("urgency")}` : ""}
+        ${job.urgent ? `<button class="num ${padOpen("urgency") ? "on" : ""}" type="button" data-num="urgency">Cargo por urgencia <b>${esc(money(amount(job.urgencyFee)))}</b></button>${padAfter("urgency")}` : ""}
+        <div class="money"><span>Total a pagar</span><b>${esc(money(balance(job)))}</b></div>
         <label class="check"><input type="checkbox" data-flag="broughtShoes" ${job.broughtShoes ? "checked" : ""}> Trajo zapatos</label>
         <label class="photo">Foto del zapato, opcional<input type="file" accept="image/*" data-photo="shoe"></label>
         ${job.shoePhoto ? `<img class="shot" alt="Zapato" src="${job.shoePhoto}">` : ""}
         <label class="check"><input type="checkbox" data-flag="picky" ${job.picky ? "checked" : ""}> Cliente mamón</label>
-        <div class="money"><span>Precio de las prendas</span><b>${esc(money(job.price))}</b></div>
-        <div class="money"><span>Resta</span><b>${esc(money(balance(job)))}</b></div>
         <p class="section-title">Prendas</p>
-        <p class="meta">El nombre y la nota se escriben con el lápiz. El precio, con el teclado.</p>
+        <p class="meta">Elige la prenda y escribe el color. La nota se escribe con el lápiz. El precio, con el teclado.</p>
         ${(job.garments || []).map((item) => `
           <div class="garment">
             <button class="tick ${item.done ? "on" : ""}" type="button" data-done="${item.id}" aria-label="${item.done ? "Hecha" : "Pendiente"}">${item.done ? "✓" : ""}</button>
             <div>
-              <p class="meta">${esc(item.name || "Prenda")}</p>
-              <div class="pad-head">
-                <p class="section-title" style="margin:0">Prenda</p>
-                <button class="text-btn" type="button" data-clear="garment-name" data-id="${item.id}">Limpiar hoja</button>
+              <p class="meta">${esc(garmentLabel(item))}</p>
+              <div class="garment-pick">
+                <label>Prenda
+                  <select data-garment="${item.id}" data-part="kind">
+                    <option value="" ${item.kind ? "" : "selected"}>Elige</option>
+                    ${GARMENT_KINDS.map((kind) => `<option value="${esc(kind)}" ${item.kind === kind ? "selected" : ""}>${esc(kind)}</option>`).join("")}
+                  </select>
+                </label>
+                <label>Color
+                  <input data-garment="${item.id}" data-part="color" type="text" value="${esc(item.color || "")}" placeholder="Color de la prenda">
+                </label>
               </div>
-              <canvas class="ink" data-ink="garment-name" data-id="${item.id}"></canvas>
+              ${item.kind === "Otro" ? `<label>Cuál es<input data-garment="${item.id}" data-part="custom" type="text" value="${esc(item.custom || "")}" placeholder="Escribe la prenda"></label>` : ""}
               <div class="pad-head">
                 <p class="section-title" style="margin:0">Nota</p>
                 <button class="text-btn" type="button" data-clear="garment-note" data-id="${item.id}">Limpiar hoja</button>
@@ -986,25 +1046,30 @@ function panelHtml() {
       </form>`;
   }
   if (ui.panel === "cita") {
+    const draft = ui.apptDraft || {};
     const options = state.jobs.filter((j) => j.status !== "entregado").map((j) => {
       const client = clientById(j.clientId);
       const name = (client?.name || "").trim() || "Sin nombre";
-      const selected = j.id === ui.jobId ? "selected" : "";
+      const picked = draft.jobId || ui.jobId;
+      const selected = j.id === picked ? "selected" : "";
       return `<option value="${j.id}" ${selected}>${esc(name)} · ${esc(j.type)}</option>`;
     }).join("");
+    const kindNow = draft.kind || "Prueba";
     return `
       <form class="form" data-form="cita" style="margin-top:14px">
-        <label>Persona<input name="person" type="text" placeholder="Escribe el nombre" autocomplete="name"></label>
+        <label>Persona<input name="person" type="text" placeholder="Escribe el nombre" autocomplete="name" value="${esc(draft.person || "")}"></label>
         ${options ? `<label>O elige uno que ya existe<select name="jobId"><option value="">Usar el nombre de arriba</option>${options}</select></label>` : `<p class="meta">Al guardar se anota la persona y su encargo.</p>`}
+        <button class="num ${padOpen("apptPhone") ? "on" : ""}" type="button" data-num="apptPhone">Teléfono <b>${esc(ui.apptPhone || "0")}</b></button>
+        ${padAfter("apptPhone")}
         <div class="grid-2">
-          <label>Día<input name="date" type="date" required value="${esc(ui.day)}"></label>
-          <label>Hora<input name="time" type="time" required value="10:00"></label>
+          <label>Fecha<input name="date" type="date" required value="${esc(draft.date || ui.day)}"></label>
+          <label>Hora<input name="time" type="time" required value="${esc(draft.time || "10:00")}"></label>
         </div>
         <div class="choice">
-          ${["Prueba", "Medidas", "Entrega", "Consulta"].map((kind, i) => `
-            <button type="button" data-kind="${esc(kind)}" class="${i === 0 ? "on" : ""}">${esc(kind)}</button>`).join("")}
+          ${["Prueba", "Medidas", "Entrega", "Consulta"].map((kind) => `
+            <button type="button" data-kind="${esc(kind)}" class="${kind === kindNow ? "on" : ""}">${esc(kind)}</button>`).join("")}
         </div>
-        <input type="hidden" name="kind" value="Prueba">
+        <input type="hidden" name="kind" value="${esc(kindNow)}">
         ${ui.apptError ? `<p class="warn">${esc(ui.apptError)}</p>` : ""}
         ${ui.clash ? `<p class="warn">Esa fecha y esa hora ya tienen cita. Cambia el horario.</p>` : ""}
         <button class="btn" type="submit">Guardar cita</button>
@@ -1024,7 +1089,18 @@ function bind() {
     btn.onclick = () => actions[btn.dataset.action]();
   });
   document.querySelectorAll("[data-panel]").forEach((btn) => {
-    btn.onclick = () => { ui.panel = ui.panel === btn.dataset.panel ? null : btn.dataset.panel; render(); };
+    btn.onclick = () => {
+      const next = ui.panel === btn.dataset.panel ? null : btn.dataset.panel;
+      if (next === "cita") {
+        ui.apptPhone = "";
+        ui.apptDraft = null;
+        ui.apptError = "";
+        ui.clash = false;
+        if (ui.pad && ui.pad.kind === "apptPhone") ui.pad = null;
+      }
+      ui.panel = next;
+      render();
+    };
   });
   document.querySelectorAll("[data-day]").forEach((btn) => {
     btn.onclick = () => { ui.day = btn.dataset.day; render(); };
@@ -1146,15 +1222,20 @@ function bind() {
     };
   });
   document.querySelectorAll("[data-garment]").forEach((field) => {
-    field.addEventListener("change", () => {
+    const saveGarment = (redraw) => {
       const job = jobById(ui.jobId);
       const item = job && job.garments.find((garment) => garment.id === field.dataset.garment);
       if (!item) return;
-      item[field.dataset.part] = field.dataset.part === "price" ? Number(field.value) : field.value;
-      job.price = job.garments.reduce((sum, garment) => sum + (Number(garment.price) || 0), 0);
+      const part = field.dataset.part;
+      item[part] = part === "price" ? Number(field.value) : field.value;
+      if (part === "kind" && item.kind !== "Otro") item.custom = "";
+      item.name = garmentTitle(item);
+      job.price = job.garments.reduce((sum, garment) => sum + amount(garment.price), 0);
       persist();
-      render();
-    });
+      if (redraw) render();
+    };
+    field.addEventListener("change", () => saveGarment(field.tagName === "SELECT"));
+    if (field.tagName === "INPUT") field.addEventListener("input", () => saveGarment(false));
   });
   document.querySelectorAll("[data-measure]").forEach((field) => {
     field.addEventListener("change", () => {
@@ -1211,7 +1292,7 @@ const actions = {
   "add-garment"() {
     const job = jobById(ui.jobId);
     if (!job) return;
-    job.garments.push({ id: uid(), name: "", note: "", price: 0, done: false });
+    job.garments.push({ id: uid(), name: "", kind: "", custom: "", color: "", note: "", price: 0, done: false });
     persist();
     render();
   },
@@ -1271,7 +1352,7 @@ function saveClient(data) {
 function enterCode(data) {
   const code = String(data.code || "").trim();
   const access = state.access || {};
-  const who = code === access.mom ? "mamá" : code === access.dad ? "papá" : code === access.andres ? "Andrés" : "";
+  const who = code === access.mom ? "mamá" : code === access.dad ? "Oscar" : code === access.andres ? "Andrés" : "";
   if (!who) {
     ui.badCode = true;
     render();
@@ -1364,7 +1445,7 @@ function removeClient(id) {
 
 async function saveProfile(data) {
   const who = data.who;
-  const label = { mom: "mamá", dad: "papá", andres: "Andrés" }[who] || "esa persona";
+  const label = { mom: "mamá", dad: "Oscar", andres: "Andrés" }[who] || "esa persona";
   const email = String(data.email || "").trim();
   const password = String(data.password || "");
   state.profiles = state.profiles || { mom: "", dad: "", andres: "" };
@@ -1576,14 +1657,20 @@ async function changePassword(data) {
 }
 
 function jobForAppointment(data) {
-  if (data.jobId && jobById(data.jobId)) return data.jobId;
+  const phone = String(data.phone || "").trim();
+  if (data.jobId && jobById(data.jobId)) {
+    const job = jobById(data.jobId);
+    const client = clientById(job.clientId);
+    if (client && phone) client.phone = phone;
+    return data.jobId;
+  }
   const name = String(data.person || "").trim();
   if (!name) return "";
   let client = state.clients.find((item) => (item.name || "").trim().toLowerCase() === name.toLowerCase());
   if (!client) {
-    client = { id: uid(), name, phone: "", nameDrawing: "" };
+    client = { id: uid(), name, phone, nameDrawing: "" };
     state.clients.push(client);
-  }
+  } else if (phone) client.phone = phone;
   let job = state.jobs.find((item) => item.clientId === client.id && item.status !== "entregado");
   if (!job) {
     job = makeJob(client.id);
@@ -1595,12 +1682,21 @@ function jobForAppointment(data) {
 function saveAppt(data) {
   const named = String(data.person || "").trim();
   const existing = data.jobId && jobById(data.jobId);
+  const phone = ui.apptPhone || "";
+  if (phoneDigits(phone).length < 10) {
+    ui.apptError = "Para agendar necesita el número telefónico.";
+    ui.clash = false;
+    window.alert("Para agendar necesita el número telefónico.");
+    render();
+    return;
+  }
   if ((!existing && !named) || !data.date || !data.time) {
     ui.apptError = "Escribe el nombre de la persona.";
     ui.clash = false;
     render();
     return;
   }
+  data.phone = phone;
   const clash = state.appointments.some((item) => item.date === data.date && item.time === data.time);
   if (clash) {
     ui.clash = true;
@@ -1620,6 +1716,8 @@ function saveAppt(data) {
   });
   persist();
   ui.panel = null;
+  ui.apptPhone = "";
+  ui.apptDraft = null;
   ui.day = data.date;
   const job = jobById(jobId);
   ui.jobId = job.id;
@@ -1659,6 +1757,10 @@ function openPad(btn) {
   const client = clientById(ui.clientId);
   let value = "";
   let label = "Número";
+  if (kind === "apptPhone") {
+    value = ui.apptPhone || "";
+    label = "Teléfono";
+  }
   if (kind === "phone" && client) {
     value = client.phone || "";
     label = "Teléfono";
@@ -1695,6 +1797,11 @@ function writePad(value) {
   if (!pad) return;
   const job = jobById(ui.jobId);
   const client = clientById(ui.clientId);
+  if (pad.kind === "apptPhone") {
+    ui.apptPhone = value;
+    pad.value = value;
+    return;
+  }
   if (pad.kind === "phone" && client) client.phone = value;
   if (pad.kind === "presupuesto" && job) job.presupuesto = value;
   if (pad.kind === "deposit" && job) job.deposit = value;

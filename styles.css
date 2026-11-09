@@ -268,6 +268,12 @@ nav { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; min-width: 0; }
   max-width: 100%;
 }
 
+.garment-pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 10px;
+}
+
 .tick {
   width: 40px;
   height: 40px;
@@ -519,7 +525,7 @@ body.text-large .screen h2 { font-size: 44px; }
   .tablet { border-radius: 0; min-height: 100vh; border: 0; overflow-x: clip; }
   .topbar { gap: 8px; padding: 12px 12px 8px; }
   .brand { font-size: 28px; }
-  .split, .grid-2, .measures { grid-template-columns: minmax(0, 1fr); }
+  .split, .grid-2, .measures, .garment-pick { grid-template-columns: minmax(0, 1fr); }
   nav { order: 3; width: 100%; }
   .nav-btn, .text-btn { padding: 8px 10px; }
   .screen { padding: 14px 12px 32px; }
