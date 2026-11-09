@@ -291,7 +291,8 @@ function normalizeJob(job) {
   job.garments = job.garments.map((item) => {
     const known = GARMENT_KINDS.find((kind) => kind.toLowerCase() === String(item.kind || item.name || "").trim().toLowerCase());
     const kind = item.kind || known || (item.name ? "Otro" : "");
-    const custom = item.custom || (kind === "Otro" && !known ? item.name || "" : "");
+    let custom = item.custom || (kind === "Otro" && !known ? item.name || "" : "");
+    if (String(custom).trim().toLowerCase() === "vestido") custom = "";
     const next = {
       id: item.id || uid(),
       kind,
@@ -536,10 +537,8 @@ function codesReady() {
 }
 
 function garmentTitle(item) {
-  if (!item) return "";
-  if (item.kind === "Otro") return String(item.custom || "").trim() || "Otro";
-  if (item.kind) return item.kind;
-  return String(item.name || "").trim();
+  if (!item || !item.kind) return "";
+  return item.kind;
 }
 
 function garmentLabel(item) {
