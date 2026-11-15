@@ -643,6 +643,40 @@ textarea { min-height: 72px; resize: vertical; }
   color: var(--navy);
   line-height: 1;
 }
+.tutorial-text {
+  font-size: clamp(1.35rem, 3.4vw, 1.85rem);
+  line-height: 1.45;
+  color: var(--ink, #103f63);
+  margin: 8px 0 18px;
+}
+.tutorial-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 0 0 16px;
+}
+.tutorial-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #69adc6;
+  opacity: 0.35;
+  display: block;
+}
+.tutorial-dots i.on {
+  opacity: 1;
+  background: #103f63;
+  transform: scale(1.15);
+}
+.tutorial-nav {
+  margin-top: 4px;
+}
+.tutorial-nav .btn,
+.tutorial-nav .btn-ghost {
+  min-height: 52px;
+  font-size: 1.15rem;
+  flex: 1;
+}
 .close {
   position: absolute;
   top: 12px;
