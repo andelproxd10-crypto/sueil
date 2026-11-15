@@ -116,6 +116,13 @@ const ui = {
   pickId: "",
   photoSlot: null,
   suggestHide: false,
+  syncConfirmed: "",
+  syncDismissed: "",
+  syncHideNone: false,
+  syncKey: "",
+  syncBuffer: null,
+  freshClientId: "",
+  freshStudentId: "",
   badCode: false,
   codeError: "",
 };
@@ -422,6 +429,155 @@ function money(n) {
 
 function phoneDigits(value) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function fold(value) {
+  return String(value || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function phoneMatch(client, digits) {
+  const theirs = phoneDigits(client && client.phone);
+  if (theirs.length < 7 || digits.length < 7) return false;
+  return theirs === digits || theirs.endsWith(digits) || digits.endsWith(theirs);
+}
+
+function nameMatch(client, folded) {
+  const theirs = fold(client && client.name);
+  if (!theirs || folded.length < 2) return false;
+  if (theirs === folded || theirs.startsWith(folded)) return true;
+  return theirs.split(/\s+/).some((word) => word.startsWith(folded));
+}
+
+function nameStill(client, folded) {
+  const theirs = fold(client && client.name);
+  if (!folded) return true;
+  if (!theirs) return false;
+  return theirs === folded || theirs.startsWith(folded) || folded.startsWith(theirs);
+}
+
+function resetSync(confirmedId) {
+  ui.syncConfirmed = confirmedId || "";
+  ui.syncDismissed = "";
+  ui.syncHideNone = false;
+  ui.syncKey = "";
+  ui.syncBuffer = null;
+}
+
+function noteSyncTyping(name, phone) {
+  const key = fold(name) + "|" + phoneDigits(phone);
+  if (key !== ui.syncKey) ui.syncHideNone = false;
+  if (ui.syncDismissed) {
+    const dismissed = clientById(ui.syncDismissed);
+    const folded = fold(name);
+    const digits = phoneDigits(phone);
+    const still = dismissed && ((digits.length >= 7 && phoneMatch(dismissed, digits)) || (folded.length >= 2 && nameMatch(dismissed, folded)));
+    if (!still) ui.syncDismissed = "";
+  }
+  ui.syncKey = key;
+}
+
+function findSync(name, phone, excludeId) {
+  const folded = fold(name);
+  const digits = phoneDigits(phone);
+  const enough = folded.length >= 2 || digits.length >= 7;
+  const pool = state.clients.filter((client) => client.id !== excludeId && client.id !== ui.syncDismissed && (String(client.name || "").trim() || phoneDigits(client.phone).length >= 7));
+  if (digits.length >= 7) {
+    const phoneOwner = pool.find((client) => phoneMatch(client, digits));
+    if (phoneOwner && phoneOwner.id !== ui.syncConfirmed) return { state: "match", client: phoneOwner, via: "phone" };
+  }
+  if (ui.syncConfirmed) {
+    const chosen = clientById(ui.syncConfirmed);
+    if (chosen && chosen.id !== excludeId && nameStill(chosen, folded)) return { state: "confirmed", client: chosen, via: "" };
+  }
+  if (!enough) return { state: "idle", client: null, via: "" };
+  const phoneHits = digits.length >= 7 ? pool.filter((client) => phoneMatch(client, digits)) : [];
+  const nameHits = folded.length >= 2 ? pool.filter((client) => nameMatch(client, folded)) : [];
+  let client = null;
+  let via = "";
+  if (phoneHits.length) {
+    client = phoneHits.find((item) => nameHits.some((hit) => hit.id === item.id)) || phoneHits[0];
+    via = "phone";
+  } else if (nameHits.length) {
+    client = nameHits.find((item) => fold(item.name) === folded) || nameHits.find((item) => fold(item.name).startsWith(folded)) || nameHits[0];
+    via = "name";
+  }
+  if (!client) return { state: "none", client: null, via: "" };
+  if (ui.syncConfirmed === client.id) return { state: "confirmed", client, via };
+  return { state: "match", client, via };
+}
+
+function fichaName(client) {
+  if (ui.syncBuffer && ui.syncBuffer.id === client.id) return ui.syncBuffer.name;
+  return client.name || "";
+}
+
+function fichaPhone(client) {
+  if (ui.syncBuffer && ui.syncBuffer.id === client.id) return ui.syncBuffer.phone;
+  return client.phone || "";
+}
+
+function syncContext() {
+  if (ui.overlay === "cita" && ui.cita) return { name: ui.cita.person || "", phone: ui.cita.phone || "", exclude: "", mode: "form" };
+  if ((ui.overlay === "encargo" || ui.overlay === "clienta") && ui.draft) return { name: ui.draft.person || "", phone: ui.draft.phone || "", exclude: "", mode: "form" };
+  if (!ui.overlay && ui.view === "clientas" && ui.clientId) {
+    const client = clientById(ui.clientId);
+    if (client) return { name: fichaName(client), phone: fichaPhone(client), exclude: client.id, mode: "ficha" };
+  }
+  return null;
+}
+
+function syncBlocks(lookup) {
+  if (!lookup) return false;
+  return lookup.state === "match" || lookup.state === "none";
+}
+
+function syncBannerHtml(lookup, mode) {
+  if (!lookup || lookup.state === "idle" || lookup.state === "confirmed") return "";
+  if (lookup.state === "match" && lookup.client) {
+    const hint = lookup.via === "phone"
+      ? `Teléfono en Clientas: ${lookup.client.phone || "sin número"} · Confirma para rellenar`
+      : `Está en Clientas${lookup.client.phone ? " · " + lookup.client.phone : ""} · Confirma para rellenar`;
+    return `<div class="suggest" role="status">
+      <p><strong>¿Es ${esc(lookup.client.name || "esta clienta")}?</strong></p>
+      <p class="meta">${esc(hint)}</p>
+      <div class="row">
+        <button class="btn" type="button" data-confirm-client="${esc(lookup.client.id)}">Confirmar</button>
+        <button class="btn-ghost" type="button" data-suggest-no>No</button>
+      </div>
+    </div>`;
+  }
+  if (lookup.state === "none" && mode === "form" && !ui.syncHideNone) {
+    return `<div class="suggest" role="status">
+      <p><strong>Sin match en Clientas</strong></p>
+      <p class="meta">Puedes crear la clienta con este nombre y teléfono.</p>
+      <div class="row">
+        <button class="btn plum" type="button" data-action="crear-clienta-sync">Crear clienta</button>
+        <button class="btn-ghost" type="button" data-action="seguir-editando">Seguir editando</button>
+      </div>
+    </div>`;
+  }
+  return "";
+}
+
+function syncSaveNote(lookup) {
+  if (!lookup || lookup.state === "idle" || lookup.state === "confirmed") return "";
+  if (lookup.state === "match") return `<p class="meta">Confirma antes de guardar.</p>`;
+  return `<p class="meta">Crea la clienta antes de guardar.</p>`;
+}
+
+function applyLinkedClient(client) {
+  const openJob = state.jobs.find((job) => job.clientId === client.id && job.status !== "entregado");
+  if (ui.overlay === "cita" && ui.cita) {
+    ui.cita.person = client.name || ui.cita.person || "";
+    ui.cita.phone = client.phone || ui.cita.phone || "";
+    ui.cita.jobId = openJob ? openJob.id : "";
+  }
+  if (ui.draft && ui.overlay !== "cita") {
+    ui.draft.person = client.name || ui.draft.person || "";
+    ui.draft.phone = client.phone || ui.draft.phone || "";
+    if (ui.draft.job && !state.jobs.some((job) => job.id === ui.draft.job.id)) ui.draft.job.clientId = client.id;
+  }
+  ui.clientId = client.id;
 }
 
 function clientById(id) {
@@ -1008,7 +1164,7 @@ function clasesHtml() {
       </div>
       <button class="icon-btn" type="button" data-action="temario" aria-label="Temario">${svg("cap")}</button>
     </div>
-    ${students.length ? `<div class="cards two">${students.map(studentCard).join("")}</div>` : `<p class="empty">Todavía no hay alumnas. El + crea una ficha. No se borra ninguna clienta.</p>`}
+    ${students.length ? `<div class="cards two">${students.map(studentCard).join("")}</div>` : `<p class="empty">Todavía no hay alumnas. Nueva alumna abre una ficha. No se borra ninguna clienta.</p>`}
     <div class="row" style="margin-top:12px"><button class="btn" type="button" data-action="alumna-nueva">Nueva alumna</button></div>`;
 }
 
@@ -1043,6 +1199,7 @@ function clientasHtml() {
       </div>
       <p class="meta">${state.clients.length} ${state.clients.length === 1 ? "clienta" : "clientas"}</p>
     </div>
+    <div class="row"><button class="btn" type="button" data-action="clienta-nueva">Nueva clienta</button></div>
     <label class="search">
       ${svg("search")}
       <input data-keep="q" data-q="clientas" type="search" placeholder="Buscar clienta..." value="${esc(q)}">
@@ -1073,8 +1230,10 @@ function fichaPane(client) {
   return `
     <article class="card">
       <button class="btn-ghost only-phone" type="button" data-action="clientas-lista" style="margin-bottom:8px">Volver a la lista</button>
-      <h2 style="font-family:var(--serif);font-size:40px;margin:0;color:var(--navy)">${esc(client.name || "Clienta")}</h2>
-      <p class="lede">${esc(client.phone || "Sin teléfono")}</p>
+      <h2 style="font-family:var(--serif);font-size:40px;margin:0;color:var(--navy)">${esc(fichaName(client) || "Clienta")}</h2>
+      <label>Nombre<input data-keep="ficha-name" data-client-field="name" data-render="1" value="${esc(fichaName(client))}" placeholder="Nombre"></label>
+      <label>Teléfono<input data-keep="ficha-phone" data-client-field="phone" data-render="1" type="tel" value="${esc(fichaPhone(client))}" placeholder="Teléfono"></label>
+      ${syncBannerHtml(findSync(fichaName(client), fichaPhone(client), client.id), "ficha")}
       <div class="row">
         <button class="btn" type="button" data-action="encargo-de-clienta">Nuevo encargo</button>
         <button class="btn" type="button" data-action="cita-de-clienta">Nueva cita</button>
@@ -1243,13 +1402,14 @@ function closeBtn() {
 
 function citaFormHtml() {
   const cita = ui.cita || {};
-  const suggest = ui.suggestHide ? null : bestClient(cita.person);
+  const lookup = findSync(cita.person, cita.phone, "");
+  const blocked = syncBlocks(lookup);
   return `
     ${closeBtn()}
     <h2>${cita.id ? "Editar cita" : "Nueva cita"}</h2>
-    <label>Nombre<input data-keep="person" data-bind="cita.person" data-render="1" value="${esc(cita.person || "")}" placeholder="Nombre"></label>
-    <label>Teléfono<input data-keep="phone" data-bind="cita.phone" type="tel" value="${esc(cita.phone || "")}" placeholder="Se rellena al confirmar..."></label>
-    ${suggest ? `<div class="suggest"><p><strong>¿Es ${esc(suggest.name)}?</strong></p><p class="meta">Teléfono en Clientas: ${esc(suggest.phone || "sin número")} · Confirma para rellenar</p><div class="row"><button class="btn" type="button" data-confirm-client="${esc(suggest.id)}">Confirmar</button><button class="btn-ghost" type="button" data-suggest-no>No</button></div></div>` : ""}
+    <label>Nombre<input data-keep="cita-person" data-bind="cita.person" data-render="1" value="${esc(cita.person || "")}" placeholder="Nombre"></label>
+    <label>Teléfono<input data-keep="cita-phone" data-bind="cita.phone" data-render="1" type="tel" value="${esc(cita.phone || "")}" placeholder="Se rellena al confirmar..."></label>
+    ${syncBannerHtml(lookup, "form")}
     <div class="grid-2">
       <label>Fecha<input data-bind="cita.date" data-render="1" type="date" value="${esc(cita.date || ui.day)}"></label>
       <label>Hora<input data-bind="cita.time" data-render="1" type="time" value="${esc(cita.time || "10:00")}"></label>
@@ -1258,15 +1418,8 @@ function citaFormHtml() {
     <div class="kinds">${CITA_KINDS.map((kind) => `<button type="button" class="kind ${cita.kind === kind ? "on" : ""}" data-cita-kind="${esc(kind)}">${esc(kind.toLowerCase())}</button>`).join("")}</div>
     <label>Notas<input data-keep="cnote" data-bind="cita.note" value="${esc(cita.note || "")}" placeholder="Notas de la cita..."></label>
     ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
-    <div class="row"><button class="btn" type="button" data-action="guardar-cita">Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
-}
-
-function bestClient(name) {
-  const n = String(name || "").trim().toLowerCase();
-  if (n.length < 2) return null;
-  const exact = state.clients.find((c) => String(c.name || "").trim().toLowerCase() === n);
-  if (exact) return null;
-  return state.clients.find((c) => String(c.name || "").toLowerCase().includes(n)) || null;
+    ${syncSaveNote(lookup)}
+    <div class="row"><button class="btn" type="button" data-action="guardar-cita" ${blocked ? "disabled" : ""}>Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
 }
 
 function citaDetalleHtml() {
@@ -1295,15 +1448,16 @@ function encargoFormHtml() {
   const draft = ui.draft;
   if (!draft) return "";
   const job = draft.job;
-  const suggest = ui.suggestHide ? null : bestClient(draft.person);
+  const lookup = findSync(draft.person, draft.phone, "");
+  const blocked = syncBlocks(lookup);
   const garments = job.garments || [];
   const full = draft.full;
   return `
     ${closeBtn()}
     <h2>${state.jobs.some((item) => item.id === job.id) ? "Encargo" : "Nuevo encargo"}</h2>
-    <label>Nombre<input data-keep="person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
-    <label>Teléfono<input data-keep="phone" data-bind="draft.phone" type="tel" value="${esc(draft.phone || "")}"></label>
-    ${suggest ? `<div class="suggest"><p><strong>¿Es ${esc(suggest.name)}?</strong></p><p class="meta">Teléfono en Clientas: ${esc(suggest.phone || "sin número")}</p><div class="row"><button class="btn" type="button" data-confirm-client="${esc(suggest.id)}">Confirmar</button><button class="btn-ghost" type="button" data-suggest-no>No</button></div></div>` : ""}
+    <label>Nombre<input data-keep="encargo-person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
+    <label>Teléfono<input data-keep="encargo-phone" data-bind="draft.phone" data-render="1" type="tel" value="${esc(draft.phone || "")}"></label>
+    ${syncBannerHtml(lookup, "form")}
     <div class="row">
       <label class="check"><input type="checkbox" data-bind="job.broughtShoes" ${job.broughtShoes ? "checked" : ""}> Trajo zapatos</label>
       <label class="check"><input type="checkbox" data-bind="job.picky" ${job.picky ? "checked" : ""}> CM</label>
@@ -1343,7 +1497,8 @@ function encargoFormHtml() {
     ${job.urgent ? `<button class="btn-ghost" type="button" data-num="urgency">Urgencia ${esc(money(amount(job.urgencyFee)))}</button>${padBlock("urgency")}` : ""}
     ${full ? `<button class="btn-ghost" type="button" data-num="deposit">Anticipo ${esc(money(amount(job.deposit)))}</button>${padBlock("deposit")}<div class="row"><button class="btn-ghost" type="button" data-action="medidas">Medidas</button><button class="btn-ghost" type="button" data-action="recibo">Recibo</button></div>` : `<button class="btn-ghost" type="button" data-action="expandir">Más detalles</button>`}
     ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
-    <div class="row"><button class="btn" type="button" data-action="guardar-encargo">Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
+    ${syncSaveNote(lookup)}
+    <div class="row"><button class="btn" type="button" data-action="guardar-encargo" ${blocked ? "disabled" : ""}>Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
 }
 
 function escAttr(value) {
@@ -1589,13 +1744,17 @@ function cuentaHtml() {
 
 function clientaFormHtml() {
   const draft = ui.draft || { person: "", phone: "" };
+  const lookup = findSync(draft.person, draft.phone, "");
+  const blocked = syncBlocks(lookup);
   return `
     ${closeBtn()}
     <h2>Nueva clienta</h2>
-    <label>Nombre<input data-keep="person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
-    <label>Teléfono<input data-keep="phone" data-bind="draft.phone" type="tel" value="${esc(draft.phone || "")}"></label>
+    <label>Nombre<input data-keep="clienta-person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
+    <label>Teléfono<input data-keep="clienta-phone" data-bind="draft.phone" data-render="1" type="tel" value="${esc(draft.phone || "")}"></label>
+    ${syncBannerHtml(lookup, "form")}
     ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
-    <button class="btn" type="button" data-action="guardar-clienta">Guardar</button>`;
+    ${syncSaveNote(lookup)}
+    <button class="btn" type="button" data-action="guardar-clienta" ${blocked ? "disabled" : ""}>Guardar</button>`;
 }
 
 function alumnaFormHtml() {
@@ -1614,7 +1773,8 @@ function alumnaFichaHtml() {
   student.progress = student.progress || {};
   return `
     ${closeBtn()}
-    <h2>${esc(student.name)}</h2>
+    <h2>${esc(student.name || "Alumna")}</h2>
+    <label>Nombre<input data-keep="alumna" data-student-name data-render="1" value="${esc(student.name || "")}" placeholder="Nombre de la alumna"></label>
     <p class="meta">Toca una clase para cambiar: en curso, hecha, próxima.</p>
     ${TEMARIO.map((title, index) => {
       const mark = student.progress[index] || "";
@@ -1729,7 +1889,7 @@ function openEncargo(id, full) {
   };
   ui.sample = null;
   ui.formError = "";
-  ui.suggestHide = false;
+  resetSync(client && String(client.name || "").trim() ? client.id : "");
   ui.overlay = "encargo";
   ui.backOverlay = null;
   ui.fab = false;
@@ -1758,7 +1918,7 @@ function openCita(appt) {
     note: "",
   };
   ui.formError = "";
-  ui.suggestHide = false;
+  resetSync(client && String(client.name || "").trim() ? client.id : "");
   ui.overlay = "cita";
   ui.fab = false;
   render();
@@ -1790,6 +1950,8 @@ function closeTop() {
   ui.formError = "";
   ui.fab = false;
   ui.inkOn = false;
+  ui.syncBuffer = null;
+  resetSync("");
   render();
 }
 
@@ -1802,6 +1964,7 @@ function go(view) {
   ui.sample = null;
   ui.pad = null;
   ui.confirm = null;
+  ui.syncBuffer = null;
   if (view !== "clientas") ui.formError = "";
   render();
 }
@@ -1857,6 +2020,33 @@ function onField(event) {
     }
     return;
   }
+  if (el.dataset.clientField && ui.clientId) {
+    const client = clientById(ui.clientId);
+    if (client) {
+      const nextName = el.dataset.clientField === "name" ? el.value : fichaName(client);
+      const nextPhone = el.dataset.clientField === "phone" ? el.value : fichaPhone(client);
+      noteSyncTyping(nextName, nextPhone);
+      const lookup = findSync(nextName, nextPhone, client.id);
+      if (lookup.state === "match") ui.syncBuffer = { id: client.id, name: nextName, phone: nextPhone };
+      else {
+        client.name = nextName;
+        client.phone = nextPhone;
+        ui.syncBuffer = null;
+        persist();
+      }
+    }
+    if (el.dataset.render === "1") render();
+    return;
+  }
+  if (el.dataset.studentName != null) {
+    const student = (state.students || []).find((item) => item.id === ui.studentId);
+    if (student) {
+      student.name = el.value;
+      persist();
+    }
+    if (el.dataset.render === "1") render();
+    return;
+  }
   if (!el.dataset.bind) return;
   if (el.type === "checkbox" && event.type !== "change") return;
   if (el.type !== "checkbox" && event.type === "change" && el.type !== "date" && el.type !== "time") return;
@@ -1867,7 +2057,10 @@ function onField(event) {
     const key = el.dataset.bind.slice(4);
     ui.draft.job[key] = value;
   }
-  if (el.dataset.bind === "draft.person" || el.dataset.bind === "cita.person") ui.suggestHide = false;
+  if (["draft.person", "draft.phone", "cita.person", "cita.phone"].includes(el.dataset.bind)) {
+    const ctx = syncContext();
+    if (ctx) noteSyncTyping(ctx.name, ctx.phone);
+  }
   if (el.dataset.bind === "draft.custom" && ui.draft && ui.draft.job && ui.pickId) {
     const item = ui.draft.job.garments.find((garment) => garment.id === ui.pickId);
     if (item && item.kind === "Otro") item.custom = el.value;
@@ -1905,7 +2098,7 @@ function onClick(event) {
   if (btn.dataset.group != null) { ui.pickGroup = btn.dataset.group; ui.overlay = "selector"; ui.backOverlay = ui.backOverlay || "encargo"; render(); return; }
   if (btn.dataset.kind) { pickKind(btn.dataset.kind); return; }
   if (btn.dataset.confirmClient) { confirmClient(btn.dataset.confirmClient); return; }
-  if (btn.dataset.suggestNo != null) { ui.suggestHide = true; render(); return; }
+  if (btn.dataset.suggestNo != null) { dismissSync(); return; }
   if (btn.dataset.dropGarment) { dropGarment(btn.dataset.dropGarment); return; }
   if (btn.dataset.cam) { shoot(btn.dataset.cam, btn.dataset.id, "cam"); return; }
   if (btn.dataset.gal) { shoot(btn.dataset.gal, btn.dataset.id, "gal"); return; }
@@ -1924,12 +2117,7 @@ function onFab(action) {
   ui.fab = false;
   if (action === "cita-nueva") { ui.clientId = null; ui.jobId = null; openCita(null); return; }
   if (action === "encargo-nuevo") { ui.clientId = null; openEncargo(null, false); return; }
-  if (action === "clienta-nueva") {
-    ui.draft = { person: "", phone: "" };
-    ui.formError = "";
-    openOverlay("clienta", null);
-    return;
-  }
+  if (action === "clienta-nueva") { startClienta(); return; }
   if (action === "archivos" || action === "ajustes" || action === "clientas") go(action);
 }
 
@@ -2014,22 +2202,117 @@ function dropGarment(id) {
   render();
 }
 
+function dismissSync() {
+  const ctx = syncContext();
+  const lookup = ctx ? findSync(ctx.name, ctx.phone, ctx.exclude) : null;
+  if (lookup && lookup.client) ui.syncDismissed = lookup.client.id;
+  ui.formError = "";
+  if (ctx && ctx.mode === "ficha" && ui.syncBuffer && ui.syncBuffer.id === ctx.exclude) {
+    const client = clientById(ctx.exclude);
+    if (client) {
+      client.name = ui.syncBuffer.name;
+      client.phone = ui.syncBuffer.phone;
+      persist();
+    }
+    ui.syncBuffer = null;
+  }
+  render();
+}
+
 function confirmClient(id) {
   const client = clientById(id);
   if (!client) return;
-  const openJob = state.jobs.find((job) => job.clientId === client.id && job.status !== "entregado");
-  if (ui.cita) {
-    ui.cita.person = client.name || "";
-    ui.cita.phone = client.phone || "";
-    if (openJob) ui.cita.jobId = openJob.id;
+  ui.formError = "";
+  ui.syncHideNone = false;
+  if (!ui.overlay && ui.view === "clientas" && ui.clientId && ui.clientId !== client.id) {
+    const leaving = ui.clientId;
+    const leavingClient = clientById(leaving);
+    ui.syncBuffer = null;
+    if (leavingClient && ui.freshClientId === leaving && !String(leavingClient.name || "").trim() && !String(leavingClient.phone || "").trim() && !jobsOf(leaving).length) {
+      state.clients = state.clients.filter((item) => item.id !== leaving);
+      ui.freshClientId = "";
+      persist();
+    }
+    ui.syncConfirmed = client.id;
+    ui.syncDismissed = "";
+    openClient(client.id);
+    return;
   }
-  if (ui.draft && ui.overlay !== "cita") {
-    ui.draft.person = client.name || "";
-    ui.draft.phone = client.phone || "";
-    if (ui.draft.job && !state.jobs.some((job) => job.id === ui.draft.job.id)) ui.draft.job.clientId = client.id;
+  ui.syncConfirmed = client.id;
+  ui.syncDismissed = "";
+  applyLinkedClient(client);
+  render();
+}
+
+function startClienta() {
+  ui.syncBuffer = null;
+  if (ui.freshClientId) {
+    const existing = clientById(ui.freshClientId);
+    if (existing && !String(existing.name || "").trim() && !String(existing.phone || "").trim() && !jobsOf(existing.id).length) {
+      resetSync("");
+      openClient(existing.id);
+      return;
+    }
   }
-  ui.suggestHide = true;
-  ui.clientId = client.id;
+  const client = { id: uid(), name: "", phone: "", nameDrawing: "" };
+  state.clients.push(client);
+  ui.freshClientId = client.id;
+  resetSync("");
+  ui.formError = "";
+  persist();
+  openClient(client.id);
+}
+
+function startAlumna() {
+  state.students = state.students || [];
+  if (ui.freshStudentId) {
+    const existing = state.students.find((item) => item.id === ui.freshStudentId);
+    if (existing && !String(existing.name || "").trim()) {
+      ui.studentId = existing.id;
+      ui.view = "clases";
+      ui.draft = null;
+      ui.formError = "";
+      openOverlay("alumna-ficha", null);
+      return;
+    }
+  }
+  const student = { id: uid(), name: "", status: "nueva", progress: {} };
+  state.students.push(student);
+  ui.freshStudentId = student.id;
+  ui.studentId = student.id;
+  ui.view = "clases";
+  ui.draft = null;
+  ui.formError = "";
+  persist();
+  openOverlay("alumna-ficha", null);
+}
+
+function createFromSync() {
+  const ctx = syncContext();
+  if (!ctx || ctx.mode !== "form") return;
+  const name = String(ctx.name || "").trim();
+  const phone = String(ctx.phone || "").trim();
+  if (!name) {
+    ui.formError = "Escribe el nombre para crear la clienta.";
+    render();
+    return;
+  }
+  let client = state.clients.find((item) => fold(item.name) === fold(name));
+  if (!client && ui.freshClientId) {
+    const fresh = clientById(ui.freshClientId);
+    if (fresh && !String(fresh.name || "").trim() && !jobsOf(fresh.id).length) client = fresh;
+  }
+  if (!client) {
+    client = { id: uid(), name, phone, nameDrawing: "" };
+    state.clients.push(client);
+  } else if (!String(client.name || "").trim()) client.name = name;
+  if (phone && (!String(client.phone || "").trim() || client.id === ui.freshClientId)) client.phone = phone;
+  persist();
+  ui.syncConfirmed = client.id;
+  ui.syncDismissed = "";
+  ui.syncHideNone = false;
+  ui.formError = "";
+  applyLinkedClient(client);
   render();
 }
 
@@ -2226,10 +2509,12 @@ function onAction(action) {
   if (action === "perfiles") return openOverlay("perfiles", null);
   if (action === "cuenta") return openOverlay("cuenta", null);
   if (action === "temario") return openOverlay("temario", null);
-  if (action === "alumna-nueva") {
-    ui.draft = { person: "" };
-    ui.formError = "";
-    openOverlay("alumna", null);
+  if (action === "clienta-nueva") return startClienta();
+  if (action === "alumna-nueva") return startAlumna();
+  if (action === "crear-clienta-sync") return createFromSync();
+  if (action === "seguir-editando") {
+    ui.syncHideNone = true;
+    render();
     return;
   }
   if (action === "ejemplo-recibo") {
@@ -2252,9 +2537,21 @@ function onAction(action) {
   if (action === "salir") return signOut();
 }
 
+function guardSync(name, phone) {
+  const lookup = findSync(name, phone, "");
+  if (!syncBlocks(lookup)) return false;
+  ui.syncHideNone = false;
+  ui.formError = lookup.state === "match"
+    ? "Confirma si es " + (lookup.client.name || "esa clienta") + "."
+    : "Crea la clienta antes de guardar.";
+  render();
+  return true;
+}
+
 function saveCita() {
   const cita = ui.cita;
   if (!cita) return;
+  if (guardSync(cita.person, cita.phone)) return;
   const phone = String(cita.phone || "");
   if (phoneDigits(phone).length < 10) {
     ui.formError = "Para agendar necesita el número telefónico.";
@@ -2276,6 +2573,7 @@ function saveCita() {
     person: cita.person,
     phone,
     jobId: cita.jobId,
+    clientId: ui.syncConfirmed,
     date: cita.date,
     time: cita.time,
     kind: cita.kind,
@@ -2296,14 +2594,29 @@ function saveCita() {
 }
 
 function jobForAppointment(data) {
+  const linked = data.clientId ? clientById(data.clientId) : null;
+  if (linked) {
+    if (data.phone && phoneDigits(data.phone).length >= 10) linked.phone = String(data.phone).trim();
+    let job = data.jobId && jobById(data.jobId);
+    if (!job || job.clientId !== linked.id) {
+      job = state.jobs.find((item) => item.clientId === linked.id && item.status !== "entregado");
+    }
+    if (!job) {
+      job = makeJob(linked.id);
+      state.jobs.push(job);
+    }
+    ui.clientId = linked.id;
+    ui.jobId = job.id;
+    return job.id;
+  }
   if (data.jobId && jobById(data.jobId)) {
     const job = jobById(data.jobId);
     const client = clientById(job.clientId);
-    if (client && data.phone) client.phone = data.phone;
+    if (client && data.phone && !String(client.phone || "").trim()) client.phone = data.phone;
     return data.jobId;
   }
   const name = String(data.person || "").trim();
-  let client = state.clients.find((item) => String(item.name || "").trim().toLowerCase() === name.toLowerCase());
+  let client = state.clients.find((item) => fold(item.name) === fold(name));
   if (!client) {
     client = { id: uid(), name, phone: data.phone || "", nameDrawing: "" };
     state.clients.push(client);
@@ -2322,9 +2635,10 @@ function commitEncargo() {
   const draft = ui.draft;
   if (!draft) return;
   const name = String(draft.person || "").trim();
-  if (!name) { ui.formError = "Escribe el nombre."; render(); return; }
   const phone = String(draft.phone || "").trim();
-  let client = state.clients.find((item) => String(item.name || "").trim().toLowerCase() === name.toLowerCase());
+  if (guardSync(name, phone)) return;
+  if (!name) { ui.formError = "Escribe el nombre."; render(); return; }
+  let client = (ui.syncConfirmed && clientById(ui.syncConfirmed)) || state.clients.find((item) => fold(item.name) === fold(name));
   if (!client && phoneDigits(phone).length < 10 && !draft.job.clientId) {
     ui.formError = "Para una clienta nueva hace falta el teléfono.";
     render();
@@ -2355,8 +2669,16 @@ function commitEncargo() {
 function saveClientForm() {
   const name = String(ui.draft && ui.draft.person || "").trim();
   const phone = String(ui.draft && ui.draft.phone || "").trim();
+  if (guardSync(name, phone)) return;
   if (!name) { ui.formError = "Escribe el nombre."; render(); return; }
-  let client = state.clients.find((item) => String(item.name || "").trim().toLowerCase() === name.toLowerCase());
+  if (ui.syncConfirmed && clientById(ui.syncConfirmed)) {
+    const chosen = clientById(ui.syncConfirmed);
+    if (phone && !String(chosen.phone || "").trim()) chosen.phone = phone;
+    persist();
+    openClient(chosen.id);
+    return;
+  }
+  let client = state.clients.find((item) => fold(item.name) === fold(name));
   if (!client) {
     client = { id: uid(), name, phone, nameDrawing: "" };
     state.clients.push(client);
