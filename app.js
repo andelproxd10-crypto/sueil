@@ -5,245 +5,50 @@ const DEMO_NAMES = new Set(["Elena Vargas", "Camila Ruiz", "Sofía Hernández", 
 const CLOUD_URL = "https://rmqdfrwcnvwntabatzkw.supabase.co";
 const CLOUD_KEY = "sb_publishable_uYdwwxosWdfWWe0mkqNB5w_jeTvt-q_";
 
-const ui = {
-  view: "slides",
-  slide: 0,
-  clientId: null,
-  jobId: null,
-  day: isoFromDate(new Date()),
-  panel: null,
-  cloud: "conectando",
-  cloudError: "",
-  cloudEmail: "",
-  settingsNote: "",
-  text: localStorage.getItem("sueil-texto") || "normal",
+const GROUPS = [
+  { id: "playera", label: "Playera", file: "playera.png", kinds: ["Blusa", "Camisa", "Playera"] },
+  { id: "pantalon", label: "Pantalón", file: "pantalon.png", kinds: ["Pantalón", "Jean", "Pans", "Pantalón de vestir"] },
+  { id: "vestido", label: "Vestido", file: "vestido.png", kinds: ["V. casual", "V. fiesta", "Falda"] },
+  { id: "novia", label: "Novia / XV", file: "novia.png", kinds: ["Novia", "XV años"], sketch: true },
+  { id: "otro", label: "Otro", file: "otro.png", kinds: ["Otro", "Saco", "Crinolina"] },
+];
+
+const KIND_LABEL = {
+  "V. casual": "Vestido casual",
+  "V. fiesta": "Vestido fiesta",
 };
 
-let db = null;
-let cloudReady = false;
-let cloudTimer = null;
-let ignoreRemoteUntil = 0;
-
-const GARMENT_KINDS = [
-  "Blusa",
-  "Camisa",
-  "Pantalón",
-  "Pans",
-  "Jean",
-  "Saco",
-  "V. casual",
-  "V. fiesta",
-  "Novia",
-  "XV años",
-  "Falda",
-  "Otro",
+const COLORS = [
+  ["blanco", "#f7f4ee"],
+  ["marfil", "#f0e2c4"],
+  ["rosa", "#f2b6c6"],
+  ["rojo", "#c44b4b"],
+  ["coral", "#e48b78"],
+  ["dorado", "#d4b15f"],
+  ["verde", "#6ea38a"],
+  ["azul", "#6aa0c4"],
+  ["navy", "#1d4e73"],
+  ["morado", "#8d6b92"],
+  ["gris", "#b7c0c4"],
+  ["negro", "#2a2e32"],
 ];
 
-let state = load();
-persist();
-
-const slides = [
-  {
-    kicker: "Sueil",
-    title: "La agenda del taller",
-    body: [
-      "Una aplicación para anotar las citas, los encargos y las medidas.",
-      "Se usa en una tablet, con lápiz. Entran mamá, papá y Andrés, cada quien con su código.",
-    ],
-  },
-  {
-    kicker: "Quién entra",
-    title: "Solo la familia",
-    body: [
-      "Entran tres personas de la familia, cada una con su código: mamá, papá y Andrés.",
-      "Eso se puede agregar después, si ella lo quiere, conectado a esta misma agenda.",
-    ],
-  },
-  {
-    kicker: "Al abrir",
-    title: "Primero, lo que urge",
-    body: [
-      "Arriba van los trabajos de esta semana. Los marcados como urgentes quedan primero, y entre ellos, el que se entrega antes.",
-      "Abajo están las citas de hoy. El cargo extra de la urgencia queda anotado en el encargo.",
-    ],
-  },
-  {
-    kicker: "La cita",
-    title: "No es solo una hora",
-    body: [
-      "Al tocar una cita se abre la persona: teléfono, tipo de trabajo, fecha del evento y fecha de entrega.",
-      "También el precio, el anticipo y lo que falta por cobrar.",
-    ],
-  },
-  {
-    kicker: "Las medidas",
-    title: "Una hoja, como el cuaderno",
-    body: [
-      "Las medidas van en una lista, con teclado. Lo que se escribe a mano va en una hoja en blanco, con el lápiz.",
-    ],
-  },
-  {
-    kicker: "Más adelante",
-    title: "Los botones llegan poco a poco",
-    body: [
-      "Lo que ella repita se convierte en botones, para tocar en vez de escribir todo. Como la tablet de un pedido, donde cada elección abre la siguiente.",
-      "La hoja se queda para lo especial. El plano del vestido entra cuando ella pase las fórmulas.",
-    ],
-  },
-  {
-    kicker: "Si algo pasa",
-    title: "La tablet se puede cambiar",
-    body: [
-      "Los datos del taller no viven solo en la tablet. Si se daña, se compra otra, se abre el mismo enlace y se entra.",
-      "Además se puede guardar una copia en esta computadora. En este boceto, los ejemplos se quedan guardados aquí.",
-    ],
-  },
-  {
-    kicker: "Ahora",
-    title: "Este boceto ya se puede tocar",
-    body: [
-      "La agenda empieza vacía. En Clientas se anota a la persona, y desde ahí se agenda.",
-    ],
-  },
+const TEMARIO = [
+  "Introducción al taller",
+  "Medidas y ficha",
+  "Patronaje básico",
+  "Corte",
+  "Costura a máquina",
+  "Acabados",
+  "Alteraciones de vestido",
+  "Entrega y cuidado",
 ];
 
-function isoFromDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function addDays(n) {
-  const d = new Date();
-  d.setHours(12, 0, 0, 0);
-  d.setDate(d.getDate() + n);
-  return isoFromDate(d);
-}
-
-function uid() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function freshExamples() {
-  const elena = uid();
-  const camila = uid();
-  const sofia = uid();
-  const rosa = uid();
-  const vestidoElena = uid();
-  const novia = uid();
-  const crinolina = uid();
-  const arreglo = uid();
-  return {
-    clients: [
-      { id: elena, name: "Elena Vargas", phone: "619 555 0142" },
-      { id: camila, name: "Camila Ruiz", phone: "619 555 0178" },
-      { id: sofia, name: "Sofía Hernández", phone: "619 555 0194" },
-      { id: rosa, name: "Rosa Méndez", phone: "619 555 0118" },
-    ],
-    jobs: [
-      {
-        id: vestidoElena,
-        clientId: elena,
-        type: "Vestido de XV",
-        eventDate: addDays(18),
-        eventTime: "17:00",
-        dueDate: addDays(6),
-        dueTime: "11:00",
-        broughtShoes: true,
-        picky: true,
-        measures: {},
-        garments: [
-          { id: uid(), name: "Vestido", note: "Lazo más corto.", price: 700, done: false },
-          { id: uid(), name: "Velo", note: "", price: 150, done: true },
-        ],
-        price: 850,
-        deposit: 300,
-        urgencyFee: 40,
-        urgent: true,
-        status: "activo",
-        note: "Quiere el lazo un poco más corto.",
-        drawing: "",
-      },
-      {
-        id: novia,
-        clientId: camila,
-        type: "Vestido de novia",
-        eventDate: addDays(60),
-        eventTime: "16:00",
-        dueDate: addDays(45),
-        dueTime: "12:00",
-        broughtShoes: true,
-        picky: false,
-        measures: {},
-        garments: [
-          { id: uid(), name: "Vestido", note: "", price: 1400, done: false },
-        ],
-        price: 1400,
-        deposit: 500,
-        urgencyFee: 0,
-        urgent: false,
-        status: "activo",
-        note: "",
-        drawing: "",
-      },
-      {
-        id: crinolina,
-        clientId: sofia,
-        type: "Crinolina",
-        eventDate: addDays(8),
-        eventTime: "19:00",
-        dueDate: addDays(4),
-        dueTime: "15:00",
-        broughtShoes: false,
-        picky: false,
-        measures: {},
-        garments: [
-          { id: uid(), name: "Crinolina", note: "", price: 220, done: false },
-        ],
-        price: 220,
-        deposit: 80,
-        urgencyFee: 15,
-        urgent: true,
-        status: "activo",
-        note: "",
-        drawing: "",
-      },
-      {
-        id: arreglo,
-        clientId: rosa,
-        type: "Alteración",
-        eventTime: "16:00",
-        dueTime: "12:00",
-        broughtShoes: false,
-        picky: false,
-        measures: {},
-        garments: [
-          { id: uid(), name: "Dobladillo", note: "Subir el ruedo.", price: 70, done: false },
-        ],
-        eventDate: addDays(9),
-        dueDate: addDays(2),
-        price: 70,
-        deposit: 0,
-        urgencyFee: 0,
-        urgent: false,
-        status: "activo",
-        note: "Subir el dobladillo.",
-        drawing: "",
-      },
-    ],
-    appointments: [
-      { id: uid(), jobId: vestidoElena, date: addDays(0), time: "10:00", kind: "Prueba" },
-      { id: uid(), jobId: crinolina, date: addDays(0), time: "16:30", kind: "Medidas" },
-      { id: uid(), jobId: arreglo, date: addDays(2), time: "12:00", kind: "Entrega" },
-    ],
-    access: { mom: "", andres: "", dad: "" },
-  };
-}
+const CITA_KINDS = ["Prueba", "Medidas", "Entrega", "Alteración"];
 
 const MEASURES = [
   ["escote", "L. Escote DTE"],
-  ["espalda", "Largo espa"],
+  ["espalda", "Largo espalda"],
   ["pinza", "Largo pinza"],
   ["talle", "Largo talle"],
   ["busto", "Contorno busto"],
@@ -270,6 +75,76 @@ const MEASURES = [
   ["tobillo-2", "Contorno tobillo"],
 ];
 
+const NAV = [
+  ["hoy", "Hoy", "hoy"],
+  ["agenda", "Agenda", "agenda"],
+  ["urgencias", "Urgencias", "bell"],
+  ["ia", "IA", "ia"],
+  ["pendientes", "Pendientes", "check"],
+  ["clases", "Clases", "cap"],
+  ["trazos", "Trazos", "pen"],
+];
+
+const ui = {
+  view: "hoy",
+  clientId: null,
+  jobId: null,
+  apptId: null,
+  studentId: null,
+  day: isoFromDate(new Date()),
+  overlay: null,
+  backOverlay: null,
+  pendHub: "hacer",
+  urgSort: "honorario",
+  archTab: "entregados",
+  q: { clientas: "", archivos: "", encargos: "" },
+  cloud: "conectando",
+  cloudError: "",
+  cloudEmail: "",
+  settingsNote: "",
+  text: localStorage.getItem("sueil-texto") || "normal",
+  brightness: Number(localStorage.getItem("sueil-brillo") || 100),
+  fab: false,
+  pad: null,
+  confirm: null,
+  draft: null,
+  cita: null,
+  sample: null,
+  formError: "",
+  toast: "",
+  inkOn: false,
+  pickId: "",
+  photoSlot: null,
+  suggestHide: false,
+  badCode: false,
+  codeError: "",
+};
+
+let db = null;
+let cloudReady = false;
+let cloudTimer = null;
+let ignoreRemoteUntil = 0;
+let paintKey = "";
+let state = load();
+
+function isoFromDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addDays(n) {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  return isoFromDate(d);
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 function amount(value) {
   return String(value ?? "0").split("+").reduce((sum, part) => {
     const n = Number(String(part).trim());
@@ -277,19 +152,48 @@ function amount(value) {
   }, 0);
 }
 
+function garmentTitle(item) {
+  if (!item || !item.kind) return item && item.custom ? item.custom : "";
+  return item.kind;
+}
+
+function kindLabel(kind) {
+  return KIND_LABEL[kind] || kind || "";
+}
+
+function garmentLabel(item) {
+  const title = kindLabel(item && (item.custom && item.kind === "Otro" ? item.custom : item.kind)) || "Prenda";
+  const color = String(item && item.color || "").trim();
+  return color ? `${title} · ${color}` : title;
+}
+
+function groupOf(kind) {
+  const k = String(kind || "").toLowerCase();
+  const exact = GROUPS.find((g) => g.kinds.some((item) => item.toLowerCase() === k));
+  if (exact) return exact;
+  if (k.includes("novia") || k.includes("xv")) return GROUPS[3];
+  if (k.includes("vest") || k.includes("falda")) return GROUPS[2];
+  if (k.includes("pantal") || k.includes("jean") || k === "pans") return GROUPS[1];
+  if (k.includes("blusa") || k.includes("camisa") || k.includes("playera")) return GROUPS[0];
+  return GROUPS[4];
+}
+
 function normalizeJob(job) {
-  if (job.type === "Arreglo") job.type = "Alteración";
+  if (job.type === "Arreglo" || /^ajuste$/i.test(String(job.type || ""))) job.type = "Alteración";
   job.dueTime = job.dueTime || "12:00";
   job.broughtShoes = !!job.broughtShoes;
   job.picky = !!job.picky;
+  job.listo = !!job.listo;
   job.shoePhoto = job.shoePhoto || "";
   job.presupuesto = job.presupuesto || 0;
   job.measures = job.measures || {};
+  job.note = job.note || "";
+  job.drawing = job.drawing || "";
   if (!Array.isArray(job.garments) || !job.garments.length) {
     job.garments = [{ id: uid(), name: "", kind: "", custom: "", color: "", note: "", price: Number(job.price) || 0, done: false }];
   }
   job.garments = job.garments.map((item) => {
-    const known = GARMENT_KINDS.find((kind) => kind.toLowerCase() === String(item.kind || item.name || "").trim().toLowerCase());
+    const known = [...GROUPS.flatMap((g) => g.kinds), "Vestido"].find((kind) => kind.toLowerCase() === String(item.kind || item.name || "").trim().toLowerCase());
     const kind = item.kind || known || (item.name ? "Otro" : "");
     let custom = item.custom || (kind === "Otro" && !known ? item.name || "" : "");
     if (String(custom).trim().toLowerCase() === "vestido") custom = "";
@@ -317,7 +221,10 @@ function emptyWorkshop(access) {
     clients: [],
     jobs: [],
     appointments: [],
+    students: [],
+    params: { urgencyPrice: 40, dueTime: "12:00" },
     access: access || { mom: "", andres: "", dad: "" },
+    profiles: { mom: "", dad: "", andres: "" },
   };
 }
 
@@ -338,7 +245,7 @@ function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
   } catch (err) {
-    alert("No cupo la copia en esta computadora. Borra una hoja grande o guarda una copia descargada.");
+    alert("No cupo la copia en este aparato. Quita una foto grande o guarda una copia.");
   }
   if (cloudReady) {
     clearTimeout(cloudTimer);
@@ -352,7 +259,16 @@ function shapeState(data) {
   data.profiles = data.profiles || { mom: "", dad: "", andres: "" };
   data.clients = data.clients || [];
   data.jobs = (data.jobs || []).map(normalizeJob);
-  data.appointments = (data.appointments || []).map((item) => ({ ...item, id: item.id || uid() }));
+  data.appointments = (data.appointments || []).map((item) => ({
+    ...item,
+    id: item.id || uid(),
+    done: !!item.done,
+    note: item.note || "",
+  }));
+  data.students = Array.isArray(data.students) ? data.students : [];
+  data.params = data.params || { urgencyPrice: 40, dueTime: "12:00" };
+  if (data.params.urgencyPrice == null || data.params.urgencyPrice === "") data.params.urgencyPrice = 40;
+  if (!data.params.dueTime) data.params.dueTime = "12:00";
   return data;
 }
 
@@ -504,14 +420,8 @@ function money(n) {
   return "$" + value.toLocaleString("es-MX");
 }
 
-function longDate(iso) {
-  if (!iso) return "Sin fecha";
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("es-MX", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
+function phoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
 }
 
 function clientById(id) {
@@ -523,12 +433,176 @@ function jobById(id) {
 }
 
 function jobsOf(clientId) {
-  return state.jobs.filter((j) => j.clientId === clientId);
+  return state.jobs.filter((j) => j.clientId === clientId && j.status !== "oculto");
 }
 
-function when(date, time) {
-  if (!date) return "Sin fecha";
-  return `${longDate(date)}${time ? " · " + time : ""}`;
+function clientName(job) {
+  const client = job && clientById(job.clientId);
+  return client ? client.name || "Clienta" : "Clienta";
+}
+
+function urgencyPrice() {
+  return amount(state.params && state.params.urgencyPrice) || 40;
+}
+
+function totalOf(job) {
+  if (!job) return 0;
+  const extra = job.urgent ? amount(job.urgencyFee) : 0;
+  const price = (job.garments || []).reduce((sum, item) => sum + amount(item.price), 0);
+  return price + extra;
+}
+
+function dueOf(job) {
+  return totalOf(job) - amount(job && job.deposit);
+}
+
+function garmentSummary(job) {
+  const names = (job.garments || []).map((item) => {
+    if (item.kind === "Otro" && item.custom) return item.custom;
+    return kindLabel(item.kind);
+  }).filter(Boolean);
+  if (names.length) return names.join(" · ");
+  return prettyType(job.type);
+}
+
+function prettyType(type) {
+  const t = String(type || "");
+  if (/ajuste|arreglo/i.test(t)) return "Alteración";
+  return t || "Encargo";
+}
+
+function isListo(job) {
+  if (!job || job.status === "entregado") return false;
+  if (job.listo) return true;
+  const items = (job.garments || []).filter((item) => item.kind || item.custom);
+  return items.length > 0 && items.every((item) => item.done);
+}
+
+function statusOf(job) {
+  if (!job) return "pendiente";
+  if (job.status === "entregado") return "entregado";
+  if (job.urgent) return "urgente";
+  if (isListo(job)) return "listo";
+  return "pendiente";
+}
+
+function statusLabel(job) {
+  return { pendiente: "Pendiente", listo: "Listo", urgente: "Urgente", entregado: "Entregado" }[statusOf(job)];
+}
+
+function daysFromToday(iso) {
+  if (!iso) return 99;
+  const [y, m, d] = String(iso).split("-").map(Number);
+  const [ty, tm, td] = addDays(0).split("-").map(Number);
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+}
+
+function lateDays(iso) {
+  return Math.max(0, -daysFromToday(iso));
+}
+
+function severity(job) {
+  const n = daysFromToday(job.dueDate);
+  if (n <= 1) return "CRÍTICO";
+  if (n <= 3) return "ALTA";
+  return "MEDIA";
+}
+
+function shortDate(iso) {
+  if (!iso) return "Sin fecha";
+  const [y, m, d] = iso.split("-").map(Number);
+  const mon = new Date(y, m - 1, d).toLocaleDateString("es-MX", { month: "short" }).replace(".", "");
+  return `${d} ${mon}`;
+}
+
+function longDate(iso) {
+  if (!iso) return "Sin fecha";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function weekDays(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, i) => {
+    const x = new Date(date);
+    x.setDate(date.getDate() + i);
+    return isoFromDate(x);
+  });
+}
+
+function dayName(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("es-MX", { weekday: "short" }).replace(".", "").slice(0, 3).toUpperCase();
+}
+
+function initials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "·";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function matches(q, ...fields) {
+  const n = String(q || "").trim().toLowerCase();
+  if (!n) return true;
+  return fields.join(" ").toLowerCase().includes(n);
+}
+
+function apptUrgent(appt) {
+  const job = jobById(appt.jobId);
+  return !!(job && job.urgent && job.status !== "entregado");
+}
+
+function sortCitas(list) {
+  return [...list].sort((a, b) => {
+    const rank = Number(apptUrgent(b)) - Number(apptUrgent(a));
+    if (rank) return rank;
+    if (a.date !== b.date) return String(a.date).localeCompare(String(b.date));
+    return String(a.time || "").localeCompare(String(b.time || ""));
+  });
+}
+
+function hoyCitas() {
+  const today = addDays(0);
+  return state.appointments.filter((a) => a.date === today).sort((a, b) => String(a.time).localeCompare(String(b.time)));
+}
+
+function hoyJobs() {
+  const today = addDays(0);
+  return state.jobs
+    .filter((job) => job.status !== "entregado" && job.dueDate === today)
+    .sort((a, b) => Number(b.urgent) - Number(a.urgent) || String(a.dueTime).localeCompare(String(b.dueTime)));
+}
+
+function urgentJobs() {
+  const list = state.jobs.filter((job) => job.urgent && job.status !== "entregado");
+  if (ui.urgSort === "fecha") {
+    list.sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)) || String(a.dueTime).localeCompare(String(b.dueTime)));
+  } else if (ui.urgSort === "cliente") {
+    list.sort((a, b) => clientName(a).localeCompare(clientName(b), "es"));
+  } else {
+    list.sort((a, b) => totalOf(b) - totalOf(a) || String(a.dueDate).localeCompare(String(b.dueDate)));
+  }
+  return list;
+}
+
+function pendHacer() {
+  const today = addDays(0);
+  const citas = state.appointments
+    .filter((a) => a.date && a.date < today && !a.done)
+    .map((a) => ({ type: "cita", item: a, late: lateDays(a.date) }));
+  const jobs = state.jobs
+    .filter((job) => job.status !== "entregado" && job.dueDate && job.dueDate < today && !isListo(job))
+    .map((job) => ({ type: "encargo", item: job, late: lateDays(job.dueDate) }));
+  return [...citas, ...jobs].sort((a, b) => b.late - a.late);
+}
+
+function pendRecoger() {
+  return state.jobs
+    .filter((job) => job.status !== "entregado" && isListo(job))
+    .sort((a, b) => String(a.dueDate || "").localeCompare(String(b.dueDate || "")));
 }
 
 function codesReady() {
@@ -536,149 +610,137 @@ function codesReady() {
   return Boolean(access.mom && access.andres && access.dad);
 }
 
-function garmentTitle(item) {
-  if (!item || !item.kind) return "";
-  return item.kind;
+function svg(name) {
+  const paths = {
+    hoy: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/><path d="M12 13v3"/>',
+    agenda: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/><circle cx="12" cy="15" r="1.6"/>',
+    bell: '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
+    check: '<path d="M8 7h12M8 12h12M8 17h8"/><path d="M4 7l1.2 1.2M4 12l1.2 1.2"/>',
+    cap: '<path d="M3 10 12 6l9 4-9 4-9-4z"/><path d="M7 12v4c2 1.5 8 1.5 10 0v-4"/>',
+    pen: '<path d="M4 20l1.2-4.2L16.2 4.8 19.2 8 8.2 19z"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    close: '<path d="M6 6l12 12M18 6 6 18"/>',
+    box: '<path d="M4 8l8-4 8 4-8 4-8-4z"/><path d="M4 8v8l8 4 8-4V8"/>',
+    gift: '<rect x="4" y="10" width="16" height="9" rx="1"/><path d="M12 10v9M4 14h16M12 10c-2-3-6-2-5 .2M12 10c2-3 6-2 5 .2"/>',
+    user: '<circle cx="12" cy="8" r="3"/><path d="M5 19c1.4-3 3.6-4.5 7-4.5S17.6 16 19 19"/>',
+    users: '<circle cx="9" cy="9" r="3"/><circle cx="16" cy="10" r="2.2"/><path d="M4 19c1-3 3-4.5 5.5-4.5S14 16 15 19M14 14.5c1.6 0 3 .8 4 2.5"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6 5.8 18.2"/>',
+    folder: '<path d="M3 7h6l2 2h10v10H3z"/>',
+    cam: '<path d="M4 8h3l2-2h6l2 2h3v10H4z"/><circle cx="12" cy="13" r="3"/>',
+    image: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 16l4.5-4 3.5 3 2-2 6 5"/>',
+    search: '<circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/>',
+    back: '<path d="M15 5 8 12l7 7"/>',
+    cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/>',
+    check2: '<circle cx="12" cy="12" r="8"/><path d="M8 12l2.5 2.5L16 9"/>',
+    alert: '<path d="M12 4 3 19h18z"/><path d="M12 10v4M12 16.5v.5"/>',
+    dress: '<path d="M9 4l3 2 3-2 2 4-2 1 3 12H6L9 9 7 8z"/>',
+  };
+  const body = paths[name] || paths.box;
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
 
-function garmentLabel(item) {
-  const title = garmentTitle(item) || "Prenda";
-  const color = String(item?.color || "").trim();
-  return color ? `${title} · ${color}` : title;
+function colorHex(name) {
+  const n = String(name || "").trim().toLowerCase();
+  if (n.startsWith("#") && n.length >= 4) return n;
+  const found = COLORS.find((item) => item[0] === n);
+  return found ? found[1] : "#d5e6ec";
 }
 
-function phoneDigits(value) {
-  return String(value || "").replace(/\D/g, "");
+function flagOn(key, legacy) {
+  const value = localStorage.getItem(key);
+  if (value === null) return localStorage.getItem(legacy) === "1";
+  return value === "1";
 }
 
-function balance(job) {
-  const extra = job.urgent ? amount(job.urgencyFee) : 0;
-  return amount(job.presupuesto) - amount(job.deposit) + extra;
+function setFlag(key, on) {
+  localStorage.setItem(key, on ? "1" : "0");
 }
 
-function charged(job) {
-  const extra = job.urgent ? amount(job.urgencyFee) : 0;
-  const price = (job.garments || []).reduce((sum, item) => sum + amount(item.price), 0);
-  return price + extra;
+function rememberFocus() {
+  const el = document.activeElement;
+  if (!el || !el.dataset || !el.dataset.keep) return null;
+  return { keep: el.dataset.keep, start: el.selectionStart, end: el.selectionEnd };
 }
 
-function span(start, end) {
-  return state.jobs
-    .filter((job) => job.dueDate >= start && job.dueDate <= end)
-    .reduce((sum, job) => sum + charged(job), 0);
+function restoreFocus(mem) {
+  if (!mem) return;
+  const el = document.querySelector(`[data-keep="${mem.keep}"]`);
+  if (!el) return;
+  el.focus();
+  if (typeof mem.start === "number" && el.setSelectionRange) {
+    try { el.setSelectionRange(mem.start, mem.end); } catch (err) { /* date inputs */ }
+  }
 }
 
-function gananciasHtml() {
-  const now = new Date();
-  const weekStart = addDays(0);
-  const weekEnd = addDays(6);
-  const monthStart = isoFromDate(new Date(now.getFullYear(), now.getMonth(), 1));
-  const monthEnd = isoFromDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-  const yearStart = `${now.getFullYear()}-01-01`;
-  const yearEnd = `${now.getFullYear()}-12-31`;
-  const monthTotal = span(monthStart, monthEnd);
-  return `
-    <h2>Ganancias</h2>
-    <p class="lede">Suma de los encargos según su fecha de entrega. El año estimado multiplica este mes por 12.</p>
-    <div class="cards">
-      <div class="card"><div class="meta">Esta semana</div><div class="who">${esc(money(span(weekStart, weekEnd)))}</div></div>
-      <div class="card"><div class="meta">Este mes</div><div class="who">${esc(money(monthTotal))}</div></div>
-      <div class="card"><div class="meta">Anotado en ${now.getFullYear()}</div><div class="who">${esc(money(span(yearStart, yearEnd)))}</div></div>
-      <div class="card"><div class="meta">Estimado anual</div><div class="who">${esc(money(monthTotal * 12))}</div></div>
+function render() {
+  applyBody();
+  const root = document.getElementById("app");
+  if (!root) return;
+  const mem = rememberFocus();
+  if (ui.cloud === "conectando" || ui.cloud === "entrar") {
+    root.innerHTML = nubeHtml();
+    restoreFocus(mem);
+    return;
+  }
+  if (codesReady() && sessionStorage.getItem(SESSION) !== "1") {
+    root.innerHTML = entradaHtml();
+    restoreFocus(mem);
+    return;
+  }
+  const sig = `${ui.view}|${ui.overlay || ""}|${ui.fab ? 1 : 0}`;
+  const flip = sig !== paintKey;
+  paintKey = sig;
+  const bright = ui.brightness === 100 ? "" : `filter:brightness(${ui.brightness / 100})`;
+  root.innerHTML = `
+    <div class="app ${ui.view === "menu" ? "app-menu" : ""}" style="${bright}">
+      ${ui.view === "menu" ? "" : topbarHtml()}
+      <main class="stage ${flip ? "rise" : ""}">${screenHtml()}</main>
+      ${dockHtml()}
+      ${fabHtml()}
+      ${overlayHtml()}
+      ${ui.toast ? `<div class="toast">${esc(ui.toast)}</div>` : ""}
+      <input id="cam" class="sr" type="file" accept="image/*" capture="environment" data-file="cam">
+      <input id="gal" class="sr" type="file" accept="image/*" data-file="gal">
     </div>`;
+  afterPaint();
+  restoreFocus(mem);
 }
 
-function pendingText(job) {
-  const items = job.garments || [];
-  const left = items.filter((item) => !item.done).length;
-  if (!items.length) return "Sin prendas";
-  if (!left) return `${items.length === 1 ? "1 prenda" : items.length + " prendas"} · listas`;
-  return left === 1 ? "Falta 1 prenda" : `Faltan ${left} prendas`;
-}
-
-function weekJobs() {
-  const start = addDays(0);
-  const end = addDays(6);
-  return state.jobs
-    .filter((j) => j.status !== "entregado" && j.dueDate >= start && j.dueDate <= end)
-    .sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.dueDate.localeCompare(b.dueDate));
+function applyBody() {
+  const names = [];
+  if (ui.text === "compacto") names.push("text-compact");
+  if (ui.text === "grande") names.push("text-large");
+  document.body.className = names.join(" ");
 }
 
 function nubeHtml() {
   if (ui.cloud === "conectando") {
-    return `
-      <section class="gate">
-        <p class="kicker">Sueil</p>
-        <h1>Conectando el taller</h1>
-        <p>Un momento.</p>
-      </section>`;
+    return `<section class="gate"><p class="kicker">Sueil</p><h1>Conectando el taller</h1><p>Un momento.</p></section>`;
   }
   return `
     <section class="gate">
-      <p class="kicker">Sueil</p>
+      <img src="brand/sueil-logo-navy.png" alt="Sueil" style="height:92px">
       <h1>Entrada del taller</h1>
-      <p>Cada quien entra con su propio correo y su contraseña. Mamá, papá y Andrés no comparten la misma cuenta.</p>
-      <form class="form" data-form="nube" style="margin-top:18px">
-        <label>Correo<input name="email" type="email" required autocomplete="username" value="${esc(ui.cloudEmail)}"></label>
+      <p>Mamá, papá y Andrés entran cada quien con su correo.</p>
+      <form class="form" data-form="nube">
+        <label>Correo<input name="email" type="email" required autocomplete="username" value="${esc(ui.cloudEmail)}" data-keep="email"></label>
         <label>Contraseña<input name="password" type="password" required minlength="6" autocomplete="current-password"></label>
         ${ui.cloudError ? `<p class="warn">${esc(ui.cloudError)}</p>` : ""}
         <div class="row">
           <button class="btn" type="submit">Entrar</button>
-          <button class="btn ghost" type="submit" name="crear" value="1">Crear entrada</button>
+          <button class="btn-ghost" type="submit" name="crear" value="1">Crear entrada</button>
         </div>
       </form>
     </section>`;
 }
 
-function bodyClass() {
-  const names = [];
-  if (ui.view !== "slides" && ui.cloud !== "conectando" && ui.cloud !== "entrar") names.push("app-mode");
-  if (ui.text === "compacto") names.push("text-compact");
-  if (ui.text === "grande") names.push("text-large");
-  return names.join(" ");
-}
-
-function captureCita() {
-  const form = document.querySelector("[data-form=cita]");
-  if (!form) return;
-  const data = Object.fromEntries(new FormData(form));
-  ui.apptDraft = {
-    person: data.person || "",
-    jobId: data.jobId || "",
-    date: data.date || ui.day,
-    time: data.time || "10:00",
-    kind: data.kind || "Prueba",
-  };
-}
-
-function render() {
-  if (ui.panel === "cita") captureCita();
-  if (ui.cloud === "conectando" || ui.cloud === "entrar") {
-    document.body.className = bodyClass();
-    document.getElementById("app").innerHTML = nubeHtml();
-    bind();
-    return;
-  }
-  const y = window.scrollY;
-  if (codesReady() && sessionStorage.getItem(SESSION) !== "1") {
-    document.body.className = bodyClass();
-    document.getElementById("app").innerHTML = entradaHtml();
-    bind();
-    return;
-  }
-  document.body.className = bodyClass();
-  document.getElementById("app").innerHTML = ui.view === "slides" ? slidesHtml() : appHtml();
-  bind();
-  if (ui.pad) window.scrollTo(0, y);
-}
-
 function entradaHtml() {
   return `
     <section class="gate">
-      <p class="kicker">Sueil</p>
+      <img src="brand/sueil-logo-navy.png" alt="Sueil" style="height:92px">
       <h1>Código de acceso</h1>
-      <p>Mamá, Oscar o Andrés. Cada quien entra con el suyo.</p>
-      <form class="form" data-form="entrar" style="margin-top:18px">
+      <p>Mamá, Oscar o Andrés. Cada quien con el suyo.</p>
+      <form class="form" data-form="entrar">
         <label>Código<input name="code" type="password" required autocomplete="off"></label>
         ${ui.badCode ? `<p class="warn">Ese código no es de la familia.</p>` : ""}
         <button class="btn" type="submit">Entrar</button>
@@ -686,677 +748,1699 @@ function entradaHtml() {
     </section>`;
 }
 
-function profileForm(who, label) {
-  const saved = (state.profiles && state.profiles[who]) || "";
-  const email = saved || (who === "andres" ? ui.cloudEmail : "");
-  const here = ui.cloudEmail && email && email.toLowerCase() === ui.cloudEmail.toLowerCase();
+function topbarHtml() {
   return `
-    <form class="form" data-form="perfil">
-      <p class="who">${esc(label)}${here ? " · este aparato" : ""}</p>
-      <input type="hidden" name="who" value="${who}">
-      <label>Correo<input name="email" type="email" required autocomplete="off" value="${esc(email)}" placeholder="su correo"></label>
-      <label>Contraseña<input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="su contraseña"></label>
-      <button class="btn ghost" type="submit">${email ? "Guardar entrada" : "Crear entrada"}</button>
-    </form>`;
+    <header class="topbar stage" style="padding-bottom:0">
+      <button class="brand" type="button" data-go="menu" aria-label="Menú Sueil">
+        <img src="brand/sueil-logo-navy.png" alt="Sueil alta costura">
+      </button>
+      <p class="atelier">Sueños e ilusiones</p>
+    </header>`;
 }
 
-function ajustesHtml() {
-  const access = state.access || { mom: "", andres: "", dad: "" };
-  const sizes = [["compacto", "Compacta"], ["normal", "Normal"], ["grande", "Grande"]];
-  return `
-    <h2>Configuración</h2>
-    <p class="lede">Cada quien con su correo. El tamaño de la letra, los códigos, la copia y las ganancias.</p>
-    ${ui.settingsNote ? `<p class="warn">${esc(ui.settingsNote)}</p>` : ""}
-    <p class="section-title">Avisos</p>
-    <p class="meta">${esc(avisosStatus())}</p>
-    <div class="row">
-      <button class="btn" type="button" data-action="avisos-on">Activar avisos</button>
-      <button class="btn ghost" type="button" data-action="avisos-off">Apagar</button>
-    </div>
-    <p class="section-title">Pantalla</p>
-    <p class="meta">En el teléfono usa Compacta: menos letra y menos espacio, para que la ficha quepa. Grande es para la tablet. El tamaño se queda en este aparato.</p>
-    <div class="choice">
-      ${sizes.map(([id, label]) => `<button type="button" data-text="${id}" class="${ui.text === id ? "on" : ""}">${label}</button>`).join("")}
-    </div>
-    <p class="section-title">Tres entradas</p>
-    <p class="meta">Mamá, papá y Andrés tienen cada uno su correo y su contraseña. Este aparato entró con ${esc(ui.cloudEmail || "nadie")}.</p>
-    ${profileForm("mom", "Mamá")}
-    ${profileForm("dad", "Oscar")}
-    ${profileForm("andres", "Andrés")}
-    <p class="section-title">Códigos de la agenda</p>
-    <p class="meta">Son aparte del correo. Sirven para saber quién abrió la agenda en un aparato que ya entró.</p>
-    <form class="form" data-form="codigos">
-      <label>Código de mamá<input name="mom" type="password" required value="${esc(access.mom)}" autocomplete="off"></label>
-      <label>Código de Oscar<input name="dad" type="password" required value="${esc(access.dad)}" autocomplete="off"></label>
-      <label>Código de Andrés<input name="andres" type="password" required value="${esc(access.andres)}" autocomplete="off"></label>
-      ${ui.codeError ? `<p class="warn">${esc(ui.codeError)}</p>` : ""}
-      <button class="btn" type="submit">Guardar códigos</button>
-    </form>
-    <p class="section-title">Copia en este aparato</p>
-    <p class="meta">Descarga un archivo con las clientas, las citas y las hojas. El almacén sigue teniendo la copia de todos los días.</p>
-    <button class="btn ghost" type="button" data-action="backup">Guardar copia</button>
-    ${gananciasHtml()}`;
+function dockHtml() {
+  const pending = pendHacer().length;
+  return `<nav class="dock" aria-label="Secciones">
+    ${NAV.map(([id, label, icon]) => {
+      const on = ui.view === id;
+      if (id === "ia") {
+        return `<button type="button" class="dock-btn ia ${on ? "on" : ""}" data-go="ia" aria-current="${on ? "page" : "false"}">IA<small>Pronto</small></button>`;
+      }
+      const badge = id === "pendientes" && pending ? `<em class="dotn">${pending > 9 ? "9+" : pending}</em>` : "";
+      return `<button type="button" class="dock-btn ${on ? "on" : ""}" data-go="${id}" aria-current="${on ? "page" : "false"}">${svg(icon)}<span>${label}</span>${badge}</button>`;
+    }).join("")}
+  </nav>`;
 }
 
-function slidesHtml() {
-  const slide = slides[ui.slide];
-  const last = ui.slide === slides.length - 1;
+function fabHtml() {
+  const items = [
+    ["cita-nueva", "Nueva cita", "cal"],
+    ["encargo-nuevo", "Nuevo encargo", "box"],
+    ["clienta-nueva", "Nueva clienta", "user"],
+    ["archivos", "Archivos", "folder"],
+    ["ajustes", "Ajustes", "gear"],
+    ["clientas", "Clientas", "users"],
+  ];
   return `
-    <div class="slide-screen">
-      <section class="slide">
-        <p class="kicker">${esc(slide.kicker)}</p>
-        <h1>${esc(slide.title)}</h1>
-        ${slide.body.map((p) => `<p>${esc(p)}</p>`).join("")}
-      </section>
-      <footer class="slide-footer">
-        <div class="dots">
-          ${slides.map((_, i) => `<button class="dot ${i === ui.slide ? "on" : ""}" data-slide="${i}" aria-label="Lámina ${i + 1}"></button>`).join("")}
-        </div>
-        <div class="row">
-          <button class="btn ghost" data-action="prev" ${ui.slide === 0 ? "disabled" : ""}>Anterior</button>
-          ${last
-            ? `<button class="btn" data-action="enter">Ver el boceto</button>`
-            : `<button class="btn" data-action="next">Siguiente</button>`}
-        </div>
-      </footer>
-    </div>`;
-}
-
-function appHtml() {
-  return `
-    <div class="device">
-      <div class="tablet">
-        <header class="topbar">
-          <button class="brand" data-action="slides">Sueil<span>alta costura</span></button>
-          <nav>
-            ${nav("hoy", "Hoy")}
-            ${nav("agenda", "Agenda")}
-            ${nav("clientas", "Clientas")}
-            ${nav("ajustes", "Ajustes")}
-          </nav>
-        </header>
-        <main class="screen">${screenHtml()}</main>
-      </div>
-    </div>`;
-}
-
-function nav(view, label) {
-  return `<button class="nav-btn ${ui.view === view ? "on" : ""}" data-go="${view}">${label}</button>`;
+    ${ui.fab ? `<div class="fab-menu">
+      ${items.map(([action, label, icon]) => `<button type="button" data-fab="${action}">${esc(label)}<span class="bubble">${svg(icon)}</span></button>`).join("")}
+    </div>` : ""}
+    <button class="fab" type="button" data-fab="toggle" aria-label="${ui.fab ? "Cerrar" : "Crear"}">${svg(ui.fab ? "close" : "plus")}</button>`;
 }
 
 function screenHtml() {
+  if (ui.view === "menu") return menuHtml();
   if (ui.view === "hoy") return hoyHtml();
   if (ui.view === "agenda") return agendaHtml();
+  if (ui.view === "urgencias") return urgenciasHtml();
+  if (ui.view === "pendientes") return pendientesHtml();
+  if (ui.view === "clases") return clasesHtml();
   if (ui.view === "clientas") return clientasHtml();
-  if (ui.view === "ganancias") ui.view = "ajustes";
-  if (ui.view === "ajustes" || ui.view === "codigos") return ajustesHtml();
-  return fichaHtml();
+  if (ui.view === "archivos") return archivosHtml();
+  if (ui.view === "ajustes") return ajustesHtml();
+  if (ui.view === "encargos") return encargosHtml();
+  if (ui.view === "ia") return soonHtml("IA", "El botón ya está en el centro. Esta parte llega después, con cuidado de los datos del taller.");
+  if (ui.view === "trazos") return soonHtml("Trazos", "Se abre cuando estén los materiales del plano. Por ahora el botón solo avisa.");
+  return hoyHtml();
+}
+
+function menuHtml() {
+  return `
+    <section class="menu">
+      <img src="brand/sueil-logo-blanco.png" alt="Sueil alta costura">
+      <p class="menu-tag">Sueños e ilusiones</p>
+    </section>`;
+}
+
+function soonHtml(title, text) {
+  return `
+    <section class="soon">
+      <p class="kicker">${esc(title)}</p>
+      <h1>Coming soon</h1>
+      <p class="lede">${esc(text)}</p>
+    </section>`;
 }
 
 function hoyHtml() {
-  const jobs = weekJobs();
-  const citas = state.appointments
-    .filter((a) => a.date === addDays(0))
-    .sort((a, b) => a.time.localeCompare(b.time));
+  const citas = hoyCitas();
+  const jobs = hoyJobs();
   return `
-    <h2>Hoy</h2>
-    <p class="lede">${esc(longDate(addDays(0)))}. Para anotar a alguien, entra a Clientas.${cloudReady ? " Los cambios se guardan en el almacén." : ""}</p>
-    <p class="section-title">Esta semana</p>
-    <div class="cards">
-      ${jobs.length ? jobs.map(jobCard).join("") : `<p class="empty">No hay entregas en los próximos 7 días.</p>`}
+    <div class="screen-head">
+      <div>
+        <h1>Hoy</h1>
+        <p class="date-chip"><i></i> Hoy · ${esc(shortDate(addDays(0)))}</p>
+      </div>
     </div>
-    <p class="section-title">Citas de hoy</p>
-    <div class="cards">
-      ${citas.length ? citas.map(citaCard).join("") : `<p class="empty">Hoy no hay citas.</p>`}
+    <div class="hoy-grid">
+      <section>
+        <p class="panel-title">${svg("cal")} Citas de hoy</p>
+        ${citas.length ? `<ol class="timeline">${citas.map(citaTimeline).join("")}</ol>` : `<p class="empty">Hoy no hay citas.</p>`}
+      </section>
+      <section>
+        <p class="panel-title">${svg("box")} Entregas y pendientes</p>
+        <div class="cards">${jobs.length ? jobs.map(hoyJobCard).join("") : `<p class="empty">Hoy no hay entregas.</p>`}</div>
+      </section>
     </div>`;
 }
 
-function statusBadges(job, weekLabel) {
-  const label = job.status === "entregado" ? "Entregado" : job.urgent ? "Urgente" : weekLabel || "Activo";
-  return `
-    <div class="badges">
-      <span class="badge ${job.urgent ? "" : "quiet"}">${esc(label)}</span>
-      ${job.broughtShoes ? `<span class="badge quiet">Trajo zapatos</span>` : ""}
-      ${job.picky ? `<span class="asterisk" title="Cliente mamón">*</span>` : ""}
-    </div>`;
-}
-
-function jobCard(job) {
-  const client = clientById(job.clientId);
-  return `
-    <button class="card ${job.urgent ? "glow" : ""}" data-open-job="${job.id}">
-      ${statusBadges(job, "Esta semana")}
-      <div class="who">${esc(client ? client.name : "Clienta")}</div>
-      <div class="meta">${esc(job.type)} · entrega ${esc(when(job.dueDate, job.dueTime))}</div>
-      <div class="meta">${esc(pendingText(job))} · total a pagar ${esc(money(balance(job)))}${job.urgent && job.urgencyFee ? ` · urgencia ${esc(money(job.urgencyFee))}` : ""}</div>
-    </button>`;
-}
-
-function deleteButton(kind, id, label) {
-  const armed = ui.confirm && ui.confirm.kind === kind && ui.confirm.id === id;
-  if (!armed) return `<button class="text-btn" type="button" data-delete="${kind}" data-id="${id}">${label}</button>`;
-  return `<span class="row">
-    <button class="text-btn" type="button" data-delete="${kind}" data-id="${id}">Sí, eliminar</button>
-    <button class="text-btn" type="button" data-delete="cancel">Cancelar</button>
-  </span>`;
-}
-
-function citaCard(appt) {
+function citaTimeline(appt) {
   const job = jobById(appt.jobId);
-  const client = job ? clientById(job.clientId) : null;
+  const name = job ? clientName(job) : "Cita";
   return `
-    <div class="card">
-      <button class="card-hit" type="button" data-open-job="${job ? job.id : ""}">
-        <div class="who">${esc(when(appt.date, appt.time))} · ${esc(appt.kind)}</div>
-        <div class="meta">${esc(client ? client.name : "")}${job ? ` · ${esc(job.type)}` : ""}</div>
+    <li>
+      <time>${esc(appt.time || "")}</time>
+      <div class="rail"><span></span></div>
+      <button class="t-card ${appt.done ? "done" : ""}" type="button" data-open-appt="${esc(appt.id)}">
+        <div class="who">${esc(name)}</div>
+        <div class="sub">— ${esc(appt.kind || "Cita")}</div>
       </button>
-      ${deleteButton("appt", appt.id, "Eliminar cita")}
-    </div>`;
+    </li>`;
+}
+
+function hoyJobCard(job) {
+  const st = statusOf(job);
+  return `
+    <article class="card row-card">
+      <span class="avatar soft">${svg(st === "listo" ? "check2" : st === "urgente" ? "alert" : "box")}</span>
+      <button class="hit" type="button" data-open-job="${esc(job.id)}">
+        <div class="who">${esc(clientName(job))}</div>
+        <div class="sub">— ${esc(garmentSummary(job))}</div>
+      </button>
+      <button class="pill ${esc(st)}" type="button" data-pill="${esc(job.id)}">${esc(statusLabel(job))}</button>
+    </article>`;
 }
 
 function agendaHtml() {
-  const days = Array.from({ length: 7 }, (_, i) => addDays(i));
-  const citas = state.appointments
-    .filter((a) => a.date === ui.day)
-    .sort((a, b) => a.time.localeCompare(b.time));
-  const todas = [...state.appointments].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const days = weekDays(ui.day);
+  const citas = sortCitas(state.appointments.filter((a) => a.date === ui.day));
   return `
-    <h2>Agenda</h2>
-    <p class="lede">Siete días, con la hora del taller.</p>
-    <div class="choice">
-      ${days.map((day) => {
-        const [y, m, d] = day.split("-").map(Number);
-        const label = new Date(y, m - 1, d).toLocaleDateString("es-MX", { weekday: "short", day: "numeric" });
-        return `<button class="day ${day === ui.day ? "on" : ""}" data-day="${day}">${esc(label)}</button>`;
-      }).join("")}
+    <p class="kicker">Agenda</p>
+    <h1 class="date-title">${esc(longDate(ui.day))}</h1>
+    <div class="days" style="margin:14px 0">
+      ${days.map((day) => `<button type="button" class="day ${day === ui.day ? "on" : ""}" data-day="${day}">${esc(dayName(day))}</button>`).join("")}
     </div>
-    <div class="row"><button class="btn" data-panel="cita">Nueva cita</button></div>
-    ${panelHtml()}
-    <p class="section-title">Este día</p>
+    <p class="kicker">Orden · urgencia, luego hora</p>
     <div class="cards">
-      ${citas.length ? citas.map(citaCard).join("") : `<p class="empty">Este día no tiene citas.</p>`}
-    </div>
-    <p class="section-title">Todas las citas</p>
-    <div class="cards">
-      ${todas.length ? todas.map(citaCard).join("") : `<p class="empty">Todavía no hay citas.</p>`}
+      ${citas.length ? citas.map(agendaRow).join("") : `<p class="empty">Este día no tiene citas.</p>`}
     </div>`;
+}
+
+function agendaRow(appt) {
+  const job = jobById(appt.jobId);
+  const urgent = apptUrgent(appt);
+  const icon = appt.kind === "Entrega" ? "gift" : appt.kind === "Alteración" ? "pen" : "dress";
+  const sub = job ? `${appt.kind || "Cita"} · ${garmentSummary(job)}` : (appt.kind || "Cita");
+  return `
+    <article class="card row-card ${appt.done ? "done" : ""}">
+      <span class="avatar soft">${svg(icon)}</span>
+      <button class="hit" type="button" data-open-appt="${esc(appt.id)}">
+        <div class="who">${esc(appt.time || "")} · ${esc(job ? clientName(job) : "Cita")}</div>
+        <div class="sub">${esc(sub)}</div>
+      </button>
+      ${urgent ? `<span class="pill critico">Urgente</span>` : ""}
+    </article>`;
+}
+
+function urgenciasHtml() {
+  const jobs = urgentJobs();
+  const late = state.jobs.filter((job) => job.status !== "entregado" && job.dueDate && job.dueDate < addDays(0)).length;
+  const filters = [["honorario", "Por honorario"], ["fecha", "Por fecha"], ["cliente", "Por cliente"]];
+  return `
+    <div class="screen-head">
+      <div>
+        <h1>Urgencias</h1>
+        <p class="lede">Entregas que no pueden esperar. Aquí están todos los días.</p>
+      </div>
+    </div>
+    ${late ? `<button class="banner" type="button" data-go="pendientes">${late === 1 ? "Hay 1 atrasada" : `Hay ${late} atrasadas`} · ver Pendientes</button>` : ""}
+    <div class="filters">
+      ${filters.map(([id, label]) => `<button type="button" class="filter ${ui.urgSort === id ? "on" : ""}" data-urg="${id}">${label}</button>`).join("")}
+    </div>
+    <div class="cards" style="margin-top:12px">
+      ${jobs.length ? jobs.map(urgRow).join("") : `<p class="empty">No hay urgencias abiertas.</p>`}
+    </div>`;
+}
+
+function urgRow(job) {
+  const sev = severity(job);
+  return `
+    <button class="urg-card ${sev === "CRÍTICO" ? "critico" : ""}" type="button" data-open-job="${esc(job.id)}">
+      <span>
+        <strong>${esc(clientName(job))}</strong>
+        <div class="sub">${esc(prettyType(garmentSummary(job)))}</div>
+      </span>
+      <span class="when">
+        <div>Entrega: ${esc(shortDate(job.dueDate))}</div>
+        <div class="sev">${esc(sev)}</div>
+      </span>
+    </button>`;
+}
+
+function pendientesHtml() {
+  const hacer = pendHacer();
+  const recoger = pendRecoger();
+  const rows = ui.pendHub === "recoger" ? recoger.map(recogerRow) : hacer.map(atrasadoRow);
+  return `
+    <div class="screen-head">
+      <div>
+        <h1>Pendientes</h1>
+        <p class="lede">${ui.pendHub === "recoger" ? "Listos, la clienta todavía no recoge." : "Citas y encargos que se han pasado."}</p>
+      </div>
+    </div>
+    <div class="filters">
+      <button type="button" class="filter ${ui.pendHub === "hacer" ? "on" : ""}" data-pend="hacer">Por hacer</button>
+      <button type="button" class="filter ${ui.pendHub === "recoger" ? "on" : ""}" data-pend="recoger">Por recoger</button>
+    </div>
+    <div class="cards" style="margin-top:12px">
+      ${rows.length ? rows.join("") : `<p class="empty">${ui.pendHub === "recoger" ? "Nada listo por recoger." : "Nada atrasado."}</p>`}
+    </div>`;
+}
+
+function atrasadoRow(row) {
+  if (row.type === "cita") {
+    const appt = row.item;
+    const job = jobById(appt.jobId);
+    return `
+      <article class="card row-card">
+        <span class="tag-late">ATRASADO</span>
+        <button class="hit" type="button" data-open-appt="${esc(appt.id)}">
+          <div class="who">${esc(job ? clientName(job) : "Cita")}</div>
+          <div class="sub">Cita de ${esc((appt.kind || "cita").toLowerCase())}</div>
+          <div class="sub">Debía: ${esc(shortDate(appt.date))}</div>
+        </button>
+        <span class="late">lleva ${row.late} ${row.late === 1 ? "día" : "días"}</span>
+      </article>`;
+  }
+  const job = row.item;
+  return `
+    <article class="card row-card">
+      <span class="tag-late">ATRASADO</span>
+      <button class="hit" type="button" data-open-job="${esc(job.id)}">
+        <div class="who">${esc(clientName(job))}</div>
+        <div class="sub">Encargo: ${esc(garmentSummary(job))}</div>
+        <div class="sub">Debía: ${esc(shortDate(job.dueDate))}</div>
+      </button>
+      <span class="late">lleva ${row.late} ${row.late === 1 ? "día" : "días"}</span>
+    </article>`;
+}
+
+function recogerRow(job) {
+  const late = lateDays(job.dueDate);
+  return `
+    <article class="card row-card">
+      <span class="pill listo">LISTO</span>
+      <button class="hit" type="button" data-open-job="${esc(job.id)}">
+        <div class="who">${esc(clientName(job))}</div>
+        <div class="sub">${esc(garmentSummary(job))}</div>
+        <div class="sub">${job.dueDate ? `Entrega ${esc(shortDate(job.dueDate))}` : "Sin fecha"}</div>
+      </button>
+      ${late ? `<span class="late">lleva ${late} días</span>` : `<span class="meta">Por recoger</span>`}
+    </article>`;
+}
+
+function clasesHtml() {
+  const students = state.students || [];
+  return `
+    <div class="screen-head">
+      <div>
+        <h1>Clases</h1>
+        <p class="lede">Alumnas y temario</p>
+      </div>
+      <button class="icon-btn" type="button" data-action="temario" aria-label="Temario">${svg("cap")}</button>
+    </div>
+    ${students.length ? `<div class="cards two">${students.map(studentCard).join("")}</div>` : `<p class="empty">Todavía no hay alumnas. El + crea una ficha. No se borra ninguna clienta.</p>`}
+    <div class="row" style="margin-top:12px"><button class="btn" type="button" data-action="alumna-nueva">Nueva alumna</button></div>`;
+}
+
+function studentCard(student) {
+  const topics = TEMARIO.map((title, index) => {
+    const mark = (student.progress || {})[index] || "";
+    const suffix = mark === "hecha" ? " ✓" : mark === "curso" ? " — en curso" : mark === "proxima" ? " — próxima" : "";
+    return `<li>${esc(title)}${esc(suffix)}</li>`;
+  }).slice(0, 3);
+  return `
+    <button class="card student" type="button" data-student="${esc(student.id)}">
+      <div class="row-card" style="display:flex">
+        <span class="avatar plum">${esc(initials(student.name))}</span>
+        <strong class="who">${esc(student.name || "Alumna")}</strong>
+        <span class="pill ${student.status === "nueva" ? "" : "listo"}">${student.status === "nueva" ? "Nueva" : "Activa"}</span>
+      </div>
+      <ol>${topics.join("")}</ol>
+    </button>`;
 }
 
 function clientasHtml() {
+  const q = ui.q.clientas;
+  const list = state.clients
+    .filter((c) => matches(q, c.name, c.phone))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), "es"));
+  const selected = clientById(ui.clientId) || list[0];
   return `
-    <h2>Clientas</h2>
-    <p class="lede">La persona se anota una vez. Cada vestido o alteración es un encargo, y dentro van las prendas.</p>
-    <div class="row"><button class="btn" data-action="create-client">Nueva clienta</button></div>
-    ${panelHtml()}
-    <div class="cards" style="margin-top:14px">
-      ${state.clients.length ? state.clients.map((c) => `
-        <button class="card" data-open-client="${c.id}">
-          <div class="who">${c.nameDrawing ? `<img class="thumb" alt="" src="${c.nameDrawing}">` : esc(c.name || "Clienta")}</div>
-          <div class="meta">${esc(c.phone || "Sin teléfono")} · ${jobsOf(c.id).length === 1 ? "1 encargo" : `${jobsOf(c.id).length} encargos`}</div>
-        </button>`).join("") : `<p class="empty">Todavía no hay clientas.</p>`}
+    <div class="screen-head">
+      <div>
+        <p class="kicker">Sueil</p>
+        <h1>Clientas</h1>
+      </div>
+      <p class="meta">${state.clients.length} ${state.clients.length === 1 ? "clienta" : "clientas"}</p>
+    </div>
+    <label class="search">
+      ${svg("search")}
+      <input data-keep="q" data-q="clientas" type="search" placeholder="Buscar clienta..." value="${esc(q)}">
+    </label>
+    <div class="split ${ui.clientId ? "show-detail" : ""}" style="margin-top:14px">
+      <div class="cards pane-list">
+        ${list.length ? list.map((c) => clientRow(c, selected && c.id === selected.id)).join("") : `<p class="empty">No hay clientas con ese nombre.</p>`}
+      </div>
+      <div class="pane-detail">${selected ? fichaPane(selected) : `<p class="empty">Elige una clienta.</p>`}</div>
     </div>`;
 }
 
-function fichaHtml() {
-  const client = clientById(ui.clientId);
-  if (!client) return `<p class="empty">Elige una clienta.</p>`;
-  const jobs = jobsOf(client.id);
-  const job = jobById(ui.jobId) || jobs[0];
-  if (job) ui.jobId = job.id;
+function clientRow(client, on) {
   return `
-    <button class="back" data-go="clientas">Volver a clientas</button>
-    <h2>${esc(client.name || "Clienta")}</h2>
-    <div class="pad-head">
-      <p class="section-title" style="margin:0">Nombre, con el lápiz</p>
-      <button class="text-btn" type="button" data-clear="client">Limpiar hoja</button>
-    </div>
-    <canvas class="ink" data-ink="client"></canvas>
-    <button class="num ${padOpen("phone") ? "on" : ""}" data-num="phone">Teléfono <b>${esc(client.phone || "0")}</b></button>
-    ${padAfter("phone")}
-    <div class="row">
-      <button class="btn" data-panel="encargo">Nuevo encargo</button>
-      <button class="btn ghost" data-panel="cita">Nueva cita</button>
-      ${deleteButton("client", client.id, "Eliminar clienta")}
-    </div>
-    ${panelHtml()}
-    ${job ? jobEditor(job, jobs) : `<p class="empty">Agrega el primer encargo.</p>`}`;
+    <article class="card row-card" style="${on ? "background:#e7f6f4" : ""}">
+      <span class="avatar ${on ? "plum" : ""}">${esc(initials(client.name))}</span>
+      <button class="hit" type="button" data-open-client="${esc(client.id)}">
+        <div class="who">${esc(client.name || "Sin nombre")}</div>
+        <div class="sub">${esc(client.phone || "Sin teléfono")}</div>
+      </button>
+      <button class="btn-ghost" type="button" data-open-client="${esc(client.id)}">Abrir ficha</button>
+    </article>`;
 }
 
-function jobEditor(job, jobs) {
-  const kinds = ["Vestido", "Vestido de XV", "Vestido de novia", "Crinolina", "Alteración"];
+function fichaPane(client) {
+  const jobs = jobsOf(client.id).filter((job) => job.status !== "entregado");
+  const job = jobs[0];
   return `
-    <div class="split" style="margin-top:16px">
-      <div class="cards">
-        ${jobs.map((item) => `
-          <button class="card ${item.urgent ? "glow" : ""}" data-select-job="${item.id}">
-            ${statusBadges(item, "Activo")}
-            <div class="who">${esc(item.type)}</div>
-            <div class="meta">Entrega ${esc(when(item.dueDate, item.dueTime))}</div>
-            <div class="meta">${esc(pendingText(item))}</div>
-          </button>`).join("")}
+    <article class="card">
+      <button class="btn-ghost only-phone" type="button" data-action="clientas-lista" style="margin-bottom:8px">Volver a la lista</button>
+      <h2 style="font-family:var(--serif);font-size:40px;margin:0;color:var(--navy)">${esc(client.name || "Clienta")}</h2>
+      <p class="lede">${esc(client.phone || "Sin teléfono")}</p>
+      <div class="row">
+        <button class="btn" type="button" data-action="encargo-de-clienta">Nuevo encargo</button>
+        <button class="btn" type="button" data-action="cita-de-clienta">Nueva cita</button>
       </div>
-      <div class="form">
-        <p class="section-title">Encargo</p>
-        <div class="choice">
-          ${kinds.map((kind) => `<button data-type="${esc(kind)}" class="${job.type === kind ? "on" : ""}">${esc(kind)}</button>`).join("")}
-        </div>
-        <div class="grid-2">
-          <label>Fecha del evento<input type="date" data-field="eventDate" value="${esc(job.eventDate)}"></label>
-          <label>Fecha de entrega<input type="date" data-field="dueDate" value="${esc(job.dueDate)}"></label>
-          <label>Hora de entrega<input type="time" data-field="dueTime" value="${esc(job.dueTime)}"></label>
-        </div>
-        <button class="num ${padOpen("presupuesto") ? "on" : ""}" type="button" data-num="presupuesto">Presupuesto <b>${esc(money(amount(job.presupuesto)))}</b></button>
-        ${padAfter("presupuesto")}
-        <button class="num ${padOpen("deposit") ? "on" : ""}" type="button" data-num="deposit">Anticipo <b>${esc(money(amount(job.deposit)))}</b></button>
-        ${padAfter("deposit")}
-        <label class="check"><input type="checkbox" data-urgent ${job.urgent ? "checked" : ""}> Marcar como urgente</label>
-        ${job.urgent ? `<button class="num ${padOpen("urgency") ? "on" : ""}" type="button" data-num="urgency">Cargo por urgencia <b>${esc(money(amount(job.urgencyFee)))}</b></button>${padAfter("urgency")}` : ""}
-        <div class="money"><span>Total a pagar</span><b>${esc(money(balance(job)))}</b></div>
-        <label class="check"><input type="checkbox" data-flag="broughtShoes" ${job.broughtShoes ? "checked" : ""}> Trajo zapatos</label>
-        <label class="photo">Foto del zapato, opcional<input type="file" accept="image/*" data-photo="shoe"></label>
-        ${job.shoePhoto ? `<img class="shot" alt="Zapato" src="${job.shoePhoto}">` : ""}
-        <label class="check"><input type="checkbox" data-flag="picky" ${job.picky ? "checked" : ""}> Cliente mamón</label>
-        <p class="section-title">Prendas</p>
-        <p class="meta">Elige la prenda y escribe el color. La nota se escribe con el lápiz. El precio, con el teclado.</p>
-        ${(job.garments || []).map((item) => `
-          <div class="garment">
-            <button class="tick ${item.done ? "on" : ""}" type="button" data-done="${item.id}" aria-label="${item.done ? "Hecha" : "Pendiente"}">${item.done ? "✓" : ""}</button>
-            <div>
-              <p class="meta">${esc(garmentLabel(item))}</p>
-              <div class="garment-pick">
-                <label>Prenda
-                  <select data-garment="${item.id}" data-part="kind">
-                    <option value="" ${item.kind ? "" : "selected"}>Elige</option>
-                    ${GARMENT_KINDS.map((kind) => `<option value="${esc(kind)}" ${item.kind === kind ? "selected" : ""}>${esc(kind)}</option>`).join("")}
-                  </select>
-                </label>
-                <label>Color
-                  <input data-garment="${item.id}" data-part="color" type="text" value="${esc(item.color || "")}" placeholder="Color de la prenda">
-                </label>
-              </div>
-              ${item.kind === "Otro" ? `<label>Cuál es<input data-garment="${item.id}" data-part="custom" type="text" value="${esc(item.custom || "")}" placeholder="Escribe la prenda"></label>` : ""}
-              <div class="pad-head">
-                <p class="section-title" style="margin:0">Nota</p>
-                <button class="text-btn" type="button" data-clear="garment-note" data-id="${item.id}">Limpiar hoja</button>
-              </div>
-              <canvas class="ink" data-ink="garment-note" data-id="${item.id}"></canvas>
-              <button class="num ${padOpen("price", item.id) ? "on" : ""}" type="button" data-num="price" data-id="${item.id}">Precio <b>${esc(money(amount(item.price)))}</b></button>
-              ${padAfter("price", item.id)}
-              <label class="photo">Foto de la prenda, opcional<input type="file" accept="image/*" data-photo="garment" data-id="${item.id}"></label>
-              ${item.photo ? `<img class="shot" alt="Prenda" src="${item.photo}">` : ""}
-            </div>
-          </div>`).join("")}
-        <button class="btn ghost" data-action="add-garment">Agregar prenda</button>
-        <div class="row">
-          <button class="btn ghost" data-action="deliver">${job.status === "entregado" ? "Volver a activar" : "Marcar entregado"}</button>
-          ${deleteButton("job", job.id, "Eliminar encargo")}
-        </div>
-        <p class="section-title">Medidas</p>
-        <div class="measure-list">
-          ${MEASURES.map(([key, label]) => `
-            <div>
-              <button class="measure ${padOpen("measure", "", key) ? "on" : ""}" type="button" data-num="measure" data-key="${key}">
-                <span>${esc(label)}</span>
-                <b>${esc(job.measures[key] || "—")}</b>
-              </button>
-              ${padAfter("measure", "", key)}
-            </div>`).join("")}
-        </div>
-        <div class="pad-wrap">
-          <div class="pad-head">
-            <div>
-              <p class="section-title" style="margin:0">Hoja de notas</p>
-              <p class="meta">Escribe con el lápiz. En esta computadora, con el mouse.</p>
-            </div>
-            <button class="text-btn" data-action="clear-pad">Limpiar hoja</button>
-          </div>
-          <canvas class="pad" data-sheet></canvas>
-        </div>
-        <p class="section-title">Citas de este encargo</p>
-        <div class="cards">
-          ${state.appointments.filter((a) => a.jobId === job.id).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).map((a) => `
-            <div class="card">
-              <div class="who">${esc(when(a.date, a.time))}</div>
-              <div class="meta">${esc(a.kind)}</div>
-              ${deleteButton("appt", a.id, "Eliminar cita")}
-            </div>
-          `).join("") || `<p class="empty">Sin citas todavía.</p>`}
-        </div>
+      ${job ? `
+        <button class="card" type="button" data-open-job="${esc(job.id)}" style="margin-top:12px">
+          <div class="sub">${esc(prettyType(job.type))}</div>
+          <div class="who">${esc(garmentSummary(job))}</div>
+          <div class="sub">Fecha de entrega</div>
+          <div class="who">${esc(longDate(job.dueDate))}</div>
+        </button>` : `<p class="empty">Sin encargos abiertos.</p>`}
+      <div class="cards" style="margin-top:10px">
+        ${jobsOf(client.id).map((item) => `<button class="btn-ghost" type="button" data-open-job="${esc(item.id)}">${esc(garmentSummary(item))} · ${esc(statusLabel(item))}</button>`).join("")}
       </div>
+      ${confirmBtn("client", client.id, "Eliminar clienta")}
+    </article>`;
+}
+
+function archivosHtml() {
+  const tabs = [
+    ["entregados", "Entregados", "check2"],
+    ["clientas", "Clientas", "users"],
+    ["citas", "Citas", "cal"],
+    ["encargos", "Encargos", "box"],
+    ["historial", "Historial", "folder"],
+  ];
+  return `
+    <div class="screen-head">
+      <h1>Archivos</h1>
+    </div>
+    <label class="search">${svg("search")}<input data-keep="qa" data-q="archivos" type="search" placeholder="Buscar..." value="${esc(ui.q.archivos)}"></label>
+    <div class="arch-tabs">
+      ${tabs.map(([id, label, icon]) => `<button type="button" class="arch-tab ${ui.archTab === id ? "on" : ""}" data-arch="${id}">${svg(icon)}<span>${label}</span></button>`).join("")}
+    </div>
+    <div class="cards">${archivoList()}</div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-ghost" type="button" data-go="agenda">Ver citas</button>
+      <button class="btn-ghost" type="button" data-go="encargos">Ver encargos</button>
+      <button class="btn-ghost" type="button" data-go="pendientes">Pendientes</button>
     </div>`;
 }
 
-function panelHtml() {
-  if (ui.panel === "clienta") {
-    return `
-      <form class="form" data-form="clienta" style="margin-top:14px">
-        <div class="grid-2">
-          <label>Nombre<input name="name" type="text" required placeholder="Nombre de la clienta"></label>
-          <label>Teléfono<input name="phone" type="tel" placeholder="Teléfono"></label>
-        </div>
-        <button class="btn" type="submit">Guardar clienta</button>
-      </form>`;
+function archivoList() {
+  const q = ui.q.archivos;
+  if (ui.archTab === "clientas") {
+    const list = state.clients.filter((c) => matches(q, c.name, c.phone));
+    if (!list.length) return `<p class="empty">Nada en clientas.</p>`;
+    return list.map((c) => `<button class="card" type="button" data-open-client="${esc(c.id)}"><div class="who">${esc(c.name)}</div><div class="sub">${esc(c.phone || "")}</div></button>`).join("");
   }
-  if (ui.panel === "encargo") {
-    return `
-      <form class="form" data-form="encargo" style="margin-top:14px">
-        <p class="lede">Después eliges el tipo. Las prendas y las medidas quedan en la ficha.</p>
-        <button class="btn" type="submit">Crear encargo</button>
-      </form>`;
-  }
-  if (ui.panel === "cita") {
-    const draft = ui.apptDraft || {};
-    const options = state.jobs.filter((j) => j.status !== "entregado").map((j) => {
-      const client = clientById(j.clientId);
-      const name = (client?.name || "").trim() || "Sin nombre";
-      const picked = draft.jobId || ui.jobId;
-      const selected = j.id === picked ? "selected" : "";
-      return `<option value="${j.id}" ${selected}>${esc(name)} · ${esc(j.type)}</option>`;
+  if (ui.archTab === "citas") {
+    const list = sortCitas(state.appointments).filter((a) => {
+      const job = jobById(a.jobId);
+      return matches(q, job ? clientName(job) : "", a.kind, a.note, a.date);
+    });
+    if (!list.length) return `<p class="empty">Nada en citas.</p>`;
+    return list.map((a) => {
+      const job = jobById(a.jobId);
+      return `<button class="card" type="button" data-open-appt="${esc(a.id)}"><div class="who">${esc(job ? clientName(job) : "Cita")}</div><div class="sub">${esc(shortDate(a.date))} · ${esc(a.time)} · ${esc(a.kind || "")}</div></button>`;
     }).join("");
-    const kindNow = draft.kind || "Prueba";
-    return `
-      <form class="form" data-form="cita" style="margin-top:14px">
-        <label>Persona<input name="person" type="text" placeholder="Escribe el nombre" autocomplete="name" value="${esc(draft.person || "")}"></label>
-        ${options ? `<label>O elige uno que ya existe<select name="jobId"><option value="">Usar el nombre de arriba</option>${options}</select></label>` : `<p class="meta">Al guardar se anota la persona y su encargo.</p>`}
-        <button class="num ${padOpen("apptPhone") ? "on" : ""}" type="button" data-num="apptPhone">Teléfono <b>${esc(ui.apptPhone || "0")}</b></button>
-        ${padAfter("apptPhone")}
-        <div class="grid-2">
-          <label>Fecha<input name="date" type="date" required value="${esc(draft.date || ui.day)}"></label>
-          <label>Hora<input name="time" type="time" required value="${esc(draft.time || "10:00")}"></label>
-        </div>
-        <div class="choice">
-          ${["Prueba", "Medidas", "Entrega", "Consulta"].map((kind) => `
-            <button type="button" data-kind="${esc(kind)}" class="${kind === kindNow ? "on" : ""}">${esc(kind)}</button>`).join("")}
-        </div>
-        <input type="hidden" name="kind" value="${esc(kindNow)}">
-        ${ui.apptError ? `<p class="warn">${esc(ui.apptError)}</p>` : ""}
-        ${ui.clash ? `<p class="warn">Esa fecha y esa hora ya tienen cita. Cambia el horario.</p>` : ""}
-        <button class="btn" type="submit">Guardar cita</button>
-      </form>`;
   }
-  return "";
+  let jobs = state.jobs;
+  if (ui.archTab === "entregados") jobs = jobs.filter((j) => j.status === "entregado");
+  if (ui.archTab === "encargos") jobs = jobs.filter((j) => j.status !== "entregado");
+  jobs = jobs.filter((j) => matches(q, clientName(j), garmentSummary(j), j.type, j.note));
+  jobs = [...jobs].sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")));
+  if (!jobs.length) return `<p class="empty">Nada en este archivo.</p>`;
+  return jobs.map((job) => `<button class="card" type="button" data-open-job="${esc(job.id)}"><div class="who">${esc(clientName(job))}</div><div class="sub">${esc(garmentSummary(job))} · ${esc(shortDate(job.dueDate))} · ${esc(statusLabel(job))}</div></button>`).join("");
 }
 
-function bind() {
-  document.querySelectorAll("[data-slide]").forEach((btn) => {
-    btn.onclick = () => { ui.slide = Number(btn.dataset.slide); render(); };
-  });
-  document.querySelectorAll("[data-go]").forEach((btn) => {
-    btn.onclick = () => { ui.view = btn.dataset.go; ui.panel = null; ui.confirm = null; render(); };
-  });
-  document.querySelectorAll("[data-action]").forEach((btn) => {
-    btn.onclick = () => actions[btn.dataset.action]();
-  });
-  document.querySelectorAll("[data-panel]").forEach((btn) => {
-    btn.onclick = () => {
-      const next = ui.panel === btn.dataset.panel ? null : btn.dataset.panel;
-      if (next === "cita") {
-        ui.apptPhone = "";
-        ui.apptDraft = null;
-        ui.apptError = "";
-        ui.clash = false;
-        if (ui.pad && ui.pad.kind === "apptPhone") ui.pad = null;
-      }
-      ui.panel = next;
-      render();
-    };
-  });
-  document.querySelectorAll("[data-day]").forEach((btn) => {
-    btn.onclick = () => { ui.day = btn.dataset.day; render(); };
-  });
-  document.querySelectorAll("[data-open-client]").forEach((btn) => {
-    btn.onclick = () => openClient(btn.dataset.openClient);
-  });
-  document.querySelectorAll("[data-open-job]").forEach((btn) => {
-    btn.onclick = () => openJob(btn.dataset.openJob);
-  });
-  document.querySelectorAll("[data-select-job]").forEach((btn) => {
-    btn.onclick = () => { ui.jobId = btn.dataset.selectJob; render(); };
-  });
-  document.querySelectorAll("[data-type]").forEach((btn) => {
-    btn.onclick = () => {
-      const job = jobById(ui.jobId);
-      if (!job) return;
-      job.type = btn.dataset.type;
-      persist();
-      render();
-    };
-  });
-  document.querySelectorAll("[data-kind]").forEach((btn) => {
-    btn.onclick = () => {
-      const form = btn.closest("form");
-      form.querySelector("[name=kind]").value = btn.dataset.kind;
-      form.querySelectorAll("[data-kind]").forEach((item) => item.classList.toggle("on", item === btn));
-    };
-  });
-  document.querySelectorAll("[data-field]").forEach((field) => {
-    field.addEventListener("change", () => {
-      const job = jobById(ui.jobId);
-      if (!job) return;
-      job[field.dataset.field] = field.type === "number" ? Number(field.value) : field.value;
-      persist();
-      render();
-    });
-  });
-  const note = document.querySelector("textarea[data-field=note]");
-  if (note) {
-    note.addEventListener("input", () => {
-      const job = jobById(ui.jobId);
-      if (!job) return;
-      job.note = note.value;
-      persist();
-    });
+function encargosHtml() {
+  const q = ui.q.encargos;
+  const jobs = state.jobs
+    .filter((job) => job.status !== "entregado" && matches(q, clientName(job), garmentSummary(job), job.note))
+    .sort((a, b) => Number(b.urgent) - Number(a.urgent) || String(a.dueDate).localeCompare(String(b.dueDate)) || String(a.dueTime).localeCompare(String(b.dueTime)));
+  return `
+    <div class="screen-head"><h1>Encargos</h1></div>
+    <p class="lede">Urgencia primero, luego la fecha de entrega.</p>
+    <label class="search">${svg("search")}<input data-keep="qe" data-q="encargos" type="search" placeholder="Buscar encargo..." value="${esc(q)}"></label>
+    <div class="cards" style="margin-top:12px">
+      ${jobs.length ? jobs.map((job) => `
+        <button class="card row-card" type="button" data-open-job="${esc(job.id)}">
+          <img src="brand/${groupOf(job.garments && job.garments[0] && job.garments[0].kind).file}" alt="" width="52" height="52">
+          <span><span class="who">${esc(clientName(job))}</span><span class="sub">${esc(garmentSummary(job))}</span></span>
+          <span class="pill ${esc(statusOf(job))}">${esc(statusLabel(job))}</span>
+        </button>`).join("") : `<p class="empty">No hay encargos abiertos.</p>`}
+    </div>`;
+}
+
+function ajustesHtml() {
+  const sizes = [["compacto", "Pequeño"], ["normal", "Mediano"], ["grande", "Grande"]];
+  return `
+    <h1>Ajustes</h1>
+    <p class="kicker">Sueil</p>
+    ${ui.settingsNote ? `<p class="warn">${esc(ui.settingsNote)}</p>` : ""}
+    <p class="kicker">Pantalla</p>
+    <div class="card">
+      <div class="choice">${sizes.map(([id, label]) => `<button type="button" class="kind ${ui.text === id ? "on" : ""}" data-text="${id}">${label}</button>`).join("")}</div>
+      <label>Brillo de pantalla<input type="range" min="70" max="130" value="${esc(ui.brightness)}" data-bright></label>
+    </div>
+    <p class="kicker">Avisos</p>
+    <div class="settings-list">
+      ${switchRow("Avisos de citas", flagOn("sueil-avisos-citas", "sueil-avisos"), "avisos-citas")}
+      ${switchRow("Avisos de urgencias", flagOn("sueil-avisos-urgencias", "sueil-avisos"), "avisos-urgencias")}
+      ${switchRow("Sonido", localStorage.getItem("sueil-sonido") === "1", "sonido")}
+    </div>
+    <p class="meta">${esc(avisosStatus())}</p>
+    <p class="kicker">Estadísticas y parámetros</p>
+    <div class="settings-list">
+      <button class="set-row" type="button" data-action="stats">Estadísticas del taller</button>
+      <button class="set-row" type="button" data-action="params">Parámetros</button>
+    </div>
+    <p class="kicker">Precios</p>
+    <button class="card" type="button" data-action="precios" style="width:100%">
+      <div class="meta">Precio de urgencia</div>
+      <div class="who">${esc(money(urgencyPrice()))}</div>
+      <p class="formula">Total encargo = suma de prendas + urgencia</p>
+    </button>
+    <p class="kicker">Códigos y perfiles</p>
+    <div class="settings-list">
+      <button class="set-row" type="button" data-action="codigos">Códigos de acceso</button>
+      <button class="set-row" type="button" data-action="perfiles">Perfiles de familia</button>
+    </div>
+    <p class="kicker">Cuenta</p>
+    <div class="settings-list">
+      <button class="set-row" type="button" data-action="cuenta">Correo y copia</button>
+      <button class="set-row" type="button" data-action="salir">Cerrar sesión</button>
+    </div>`;
+}
+
+function switchRow(label, on, action) {
+  return `<button class="set-row" type="button" data-switch="${action}"><span>${esc(label)}</span><span class="switch ${on ? "on" : ""}" aria-hidden="true"><i></i></span></button>`;
+}
+
+function overlayHtml() {
+  if (!ui.overlay) return "";
+  const body = {
+    fab: "",
+    cita: citaFormHtml(),
+    "cita-detalle": citaDetalleHtml(),
+    encargo: encargoFormHtml(),
+    resumen: resumenHtml(),
+    selector: selectorHtml(),
+    notas: notasHtml(),
+    medidas: medidasHtml(),
+    recibo: reciboHtml(),
+    cromatico: cromaticoHtml(),
+    stats: statsHtml(),
+    params: paramsHtml(),
+    precios: preciosHtml(),
+    codigos: codigosHtml(),
+    perfiles: perfilesHtml(),
+    cuenta: cuentaHtml(),
+    clienta: clientaFormHtml(),
+    alumna: alumnaFormHtml(),
+    "alumna-ficha": alumnaFichaHtml(),
+    temario: temarioHtml(),
+  }[ui.overlay] || "";
+  if (!body) return "";
+  const wide = ui.overlay === "medidas" || ui.overlay === "notas" || ui.overlay === "selector";
+  return `<div class="backdrop" data-backdrop="1"><section class="sheet ${wide ? "wide" : ""}" role="dialog">${body}</section></div>`;
+}
+
+function closeBtn() {
+  return `<button class="close" type="button" data-close="1" aria-label="Cerrar">${svg("close")}</button>`;
+}
+
+function citaFormHtml() {
+  const cita = ui.cita || {};
+  const suggest = ui.suggestHide ? null : bestClient(cita.person);
+  return `
+    ${closeBtn()}
+    <h2>${cita.id ? "Editar cita" : "Nueva cita"}</h2>
+    <label>Nombre<input data-keep="person" data-bind="cita.person" data-render="1" value="${esc(cita.person || "")}" placeholder="Nombre"></label>
+    <label>Teléfono<input data-keep="phone" data-bind="cita.phone" type="tel" value="${esc(cita.phone || "")}" placeholder="Se rellena al confirmar..."></label>
+    ${suggest ? `<div class="suggest"><p><strong>¿Es ${esc(suggest.name)}?</strong></p><p class="meta">Teléfono en Clientas: ${esc(suggest.phone || "sin número")} · Confirma para rellenar</p><div class="row"><button class="btn" type="button" data-confirm-client="${esc(suggest.id)}">Confirmar</button><button class="btn-ghost" type="button" data-suggest-no>No</button></div></div>` : ""}
+    <div class="grid-2">
+      <label>Fecha<input data-bind="cita.date" data-render="1" type="date" value="${esc(cita.date || ui.day)}"></label>
+      <label>Hora<input data-bind="cita.time" data-render="1" type="time" value="${esc(cita.time || "10:00")}"></label>
+    </div>
+    <p class="meta">Tipo</p>
+    <div class="kinds">${CITA_KINDS.map((kind) => `<button type="button" class="kind ${cita.kind === kind ? "on" : ""}" data-cita-kind="${esc(kind)}">${esc(kind.toLowerCase())}</button>`).join("")}</div>
+    <label>Notas<input data-keep="cnote" data-bind="cita.note" value="${esc(cita.note || "")}" placeholder="Notas de la cita..."></label>
+    ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
+    <div class="row"><button class="btn" type="button" data-action="guardar-cita">Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
+}
+
+function bestClient(name) {
+  const n = String(name || "").trim().toLowerCase();
+  if (n.length < 2) return null;
+  const exact = state.clients.find((c) => String(c.name || "").trim().toLowerCase() === n);
+  if (exact) return null;
+  return state.clients.find((c) => String(c.name || "").toLowerCase().includes(n)) || null;
+}
+
+function citaDetalleHtml() {
+  const appt = state.appointments.find((item) => item.id === ui.apptId);
+  if (!appt) return `${closeBtn()}<p class="empty">Esa cita ya no está.</p>`;
+  const job = jobById(appt.jobId);
+  const client = job ? clientById(job.clientId) : null;
+  return `
+    ${closeBtn()}
+    <p class="kicker">Detalle de cita</p>
+    <h2>${esc(client ? client.name : "Cita")}</h2>
+    <p class="lede">${svg("cal")} ${esc(appt.date === addDays(0) ? "Hoy · " + shortDate(appt.date) : longDate(appt.date))} · ${esc(appt.time || "")}</p>
+    <span class="pill on">${esc((appt.kind || "cita").toLowerCase())}</span>
+    <p class="kicker">Notas</p>
+    <p>${esc(appt.note || "Sin notas")}</p>
+    ${job ? `<p class="card">Encargo: ${esc(garmentSummary(job))}${job.picky ? " · CM" : ""}</p>` : ""}
+    <div class="row" style="margin-top:12px">
+      <button class="btn-ghost" type="button" data-action="editar-cita">Editar</button>
+      <button class="btn" type="button" data-action="cita-hecha">${appt.done ? "Reabrir" : "Marcar hecha"}</button>
+      ${client ? `<button class="btn plum" type="button" data-open-client="${esc(client.id)}">Abrir ficha</button>` : ""}
+    </div>
+    ${confirmBtn("appt", appt.id, "Eliminar cita")}`;
+}
+
+function encargoFormHtml() {
+  const draft = ui.draft;
+  if (!draft) return "";
+  const job = draft.job;
+  const suggest = ui.suggestHide ? null : bestClient(draft.person);
+  const garments = job.garments || [];
+  const full = draft.full;
+  return `
+    ${closeBtn()}
+    <h2>${state.jobs.some((item) => item.id === job.id) ? "Encargo" : "Nuevo encargo"}</h2>
+    <label>Nombre<input data-keep="person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
+    <label>Teléfono<input data-keep="phone" data-bind="draft.phone" type="tel" value="${esc(draft.phone || "")}"></label>
+    ${suggest ? `<div class="suggest"><p><strong>¿Es ${esc(suggest.name)}?</strong></p><p class="meta">Teléfono en Clientas: ${esc(suggest.phone || "sin número")}</p><div class="row"><button class="btn" type="button" data-confirm-client="${esc(suggest.id)}">Confirmar</button><button class="btn-ghost" type="button" data-suggest-no>No</button></div></div>` : ""}
+    <div class="row">
+      <label class="check"><input type="checkbox" data-bind="job.broughtShoes" ${job.broughtShoes ? "checked" : ""}> Trajo zapatos</label>
+      <label class="check"><input type="checkbox" data-bind="job.picky" ${job.picky ? "checked" : ""}> CM</label>
+    </div>
+    <p class="meta">Foto del zapato, opcional</p>
+    ${photoButtons("shoe")}
+    ${job.shoePhoto ? `<img class="shot" alt="Zapato" src="${job.shoePhoto}">` : ""}
+    <p class="kicker">Prenda</p>
+    <div class="g-icons">
+      ${GROUPS.filter((g) => g.id !== "otro").map((g) => `<button type="button" class="g-icon ${g.sketch ? "sketch" : ""}" data-group="${g.id}"><img src="brand/${g.file}" alt=""><span>${esc(g.label)}</span></button>`).join("")}
+      <button type="button" class="g-icon" data-group="otro"><img src="brand/otro.png" alt=""><span>Otro</span></button>
+    </div>
+    <p class="meta">Toca un grupo. Se abre el selector.</p>
+    <div class="cards">
+      ${garments.filter((item) => item.kind || item.custom).map((item) => `
+        <div class="card row-card">
+          <img src="brand/${groupOf(item.kind).file}" alt="" width="48" height="48">
+          <div><div class="who">${esc(garmentLabel(item))}</div>${full ? `<button class="btn-ghost" type="button" data-num="price" data-id="${esc(item.id)}">Precio ${esc(money(amount(item.price)))}</button>` : ""}</div>
+          <button class="btn-ghost" type="button" data-drop-garment="${esc(item.id)}">Quitar</button>
+        </div>`).join("")}
+    </div>
+    ${padBlock("price")}
+    <p class="meta">Foto de la prenda, opcional</p>
+    ${photoButtons("garment", ((garments.filter((item) => item.kind || item.custom).slice(-1)[0]) || {}).id || "")}
+    ${(garments.find((item) => item.photo) || {}).photo ? `<img class="shot" alt="Prenda" src="${escAttr((garments.find((item) => item.photo) || {}).photo)}">` : ""}
+    <label>Nota<input data-keep="jnote" data-bind="job.note" value="${esc(job.note || "")}" placeholder="Nota del encargo"></label>
+    <div class="row"><button class="btn-ghost" type="button" data-action="notas">Hoja de notas</button><button class="btn-ghost" type="button" data-action="color">Color</button></div>
+    <div class="grid-2">
+      <label>Evento<input data-bind="job.eventDate" data-render="1" type="date" value="${esc(job.eventDate || "")}"></label>
+      <label>Entrega<input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}"></label>
+    </div>
+    <label>Hora de entrega<input data-bind="job.dueTime" data-render="1" type="time" value="${esc(job.dueTime || "12:00")}"></label>
+    <p class="meta">Estado</p>
+    <div class="kinds">
+      ${["pendiente", "listo", "urgente"].map((id) => `<button type="button" class="kind ${statusOf(job) === id ? "on" : ""}" data-status="${id}">${id === "pendiente" ? "Pendiente" : id === "listo" ? "Listo" : "Urgente"}</button>`).join("")}
+    </div>
+    ${job.urgent ? `<button class="btn-ghost" type="button" data-num="urgency">Urgencia ${esc(money(amount(job.urgencyFee)))}</button>${padBlock("urgency")}` : ""}
+    ${full ? `<button class="btn-ghost" type="button" data-num="deposit">Anticipo ${esc(money(amount(job.deposit)))}</button>${padBlock("deposit")}<div class="row"><button class="btn-ghost" type="button" data-action="medidas">Medidas</button><button class="btn-ghost" type="button" data-action="recibo">Recibo</button></div>` : `<button class="btn-ghost" type="button" data-action="expandir">Más detalles</button>`}
+    ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
+    <div class="row"><button class="btn" type="button" data-action="guardar-encargo">Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
+}
+
+function escAttr(value) {
+  return esc(value).replace(/"/g, "&quot;");
+}
+
+function photoButtons(part, id) {
+  return `<div class="photo-row">
+    <button class="btn sky" type="button" data-cam="${part}" data-id="${esc(id || "")}">${svg("cam")} Tomar foto</button>
+    <button class="btn-ghost" type="button" data-gal="${part}" data-id="${esc(id || "")}">${svg("image")} Galería</button>
+  </div>`;
+}
+
+function selectorHtml() {
+  const group = GROUPS.find((item) => item.id === ui.pickGroup) || null;
+  if (!group) {
+    return `${closeBtn()}<h2>Prenda</h2><div class="g-icons">${GROUPS.map((g) => `<button type="button" class="g-icon ${g.sketch ? "sketch" : ""}" data-group="${g.id}"><img src="brand/${g.file}" alt=""><span>${esc(g.label)}</span></button>`).join("")}</div>`;
   }
-  const urgent = document.querySelector("[data-urgent]");
-  if (urgent) {
-    urgent.onchange = () => {
-      const job = jobById(ui.jobId);
-      job.urgent = urgent.checked;
-      if (!job.urgent) job.urgencyFee = 0;
-      else if (!job.urgencyFee) job.urgencyFee = 5;
-      persist();
-      render();
-    };
-  }
-  document.querySelectorAll("form").forEach((form) => {
-    form.onsubmit = (event) => {
-      event.preventDefault();
-      const data = Object.fromEntries(new FormData(form));
-      if (form.dataset.form === "clienta") saveClient(data);
-      if (form.dataset.form === "encargo") saveJob();
-      if (form.dataset.form === "cita") saveAppt(data);
-      if (form.dataset.form === "entrar") enterCode(data);
-      if (form.dataset.form === "codigos") saveCodes(data);
-      if (form.dataset.form === "nube") cloudEnter(data, event.submitter?.name === "crear");
-      if (form.dataset.form === "correo") changeEmail(data);
-      if (form.dataset.form === "clave") changePassword(data);
-      if (form.dataset.form === "perfil") saveProfile(data);
-    };
-  });
-  document.querySelectorAll("[data-flag]").forEach((box) => {
-    box.onchange = () => {
-      const job = jobById(ui.jobId);
-      if (!job) return;
-      job[box.dataset.flag] = box.checked;
-      persist();
-      render();
-    };
-  });
-  document.querySelectorAll("[data-done]").forEach((btn) => {
-    btn.onclick = () => {
-      const job = jobById(ui.jobId);
-      const item = job && job.garments.find((garment) => garment.id === btn.dataset.done);
-      if (!item) return;
-      item.done = !item.done;
-      persist();
-      render();
-    };
-  });
-  document.querySelectorAll("[data-text]").forEach((btn) => {
-    btn.onclick = () => {
-      ui.text = btn.dataset.text;
-      localStorage.setItem("sueil-texto", ui.text);
-      ui.settingsNote = "";
-      render();
-    };
-  });
-  document.querySelectorAll("[data-delete]").forEach((btn) => {
-    btn.onclick = () => {
-      const kind = btn.dataset.delete;
-      const id = btn.dataset.id;
-      if (kind === "cancel") {
-        ui.confirm = null;
-        render();
-        return;
-      }
-      if (!ui.confirm || ui.confirm.kind !== kind || ui.confirm.id !== id) {
-        ui.confirm = { kind, id };
-        render();
-        return;
-      }
-      ui.confirm = null;
-      if (kind === "appt") removeAppt(id);
-      if (kind === "job") removeJob(id);
-      if (kind === "client") removeClient(id);
-    };
-  });
-  document.querySelectorAll("[data-garment]").forEach((field) => {
-    const saveGarment = (redraw) => {
-      const job = jobById(ui.jobId);
-      const item = job && job.garments.find((garment) => garment.id === field.dataset.garment);
-      if (!item) return;
-      const part = field.dataset.part;
-      item[part] = part === "price" ? Number(field.value) : field.value;
-      if (part === "kind" && item.kind !== "Otro") item.custom = "";
-      item.name = garmentTitle(item);
-      job.price = job.garments.reduce((sum, garment) => sum + amount(garment.price), 0);
-      persist();
-      if (redraw) render();
-    };
-    field.addEventListener("change", () => saveGarment(field.tagName === "SELECT"));
-    if (field.tagName === "INPUT") field.addEventListener("input", () => saveGarment(false));
-  });
-  document.querySelectorAll("[data-measure]").forEach((field) => {
-    field.addEventListener("change", () => {
-      const job = jobById(ui.jobId);
-      if (!job) return;
-      job.measures[field.dataset.measure] = field.value;
-      persist();
-    });
-  });
-  const canvas = document.querySelector("[data-sheet]");
-  if (canvas) setupPad(canvas, jobById(ui.jobId));
-  document.querySelectorAll("[data-ink]").forEach((ink) => setupInk(ink));
-  document.querySelectorAll("[data-clear]").forEach((btn) => {
-    btn.onclick = () => clearInk(btn.dataset.clear, btn.dataset.id);
-  });
-  document.querySelectorAll("[data-num]").forEach((btn) => {
-    btn.onclick = () => openPad(btn);
-  });
-  document.querySelectorAll("[data-press]").forEach((btn) => {
-    btn.onclick = () => pressKey(btn.dataset.press);
-  });
-  document.querySelectorAll("[data-photo]").forEach((input) => {
-    input.onchange = () => readPhoto(input);
+  return `
+    ${closeBtn()}
+    <button class="btn-ghost" type="button" data-group="">Grupos</button>
+    <h2>${esc(group.label)}</h2>
+    <div class="cards">
+      ${group.kinds.map((kind) => `<button class="kind-card" type="button" data-kind="${esc(kind)}"><img src="brand/${group.file}" alt=""><span>${esc(kindLabel(kind))}</span></button>`).join("")}
+    </div>
+    ${group.id === "otro" ? `<label>Cuál es<input data-keep="custom" data-bind="draft.custom" value="${esc((ui.draft && ui.draft.custom) || "")}" placeholder="Escribe la prenda"></label>` : ""}`;
+}
+
+function resumenHtml() {
+  const job = jobById(ui.jobId);
+  if (!job) return `${closeBtn()}<p class="empty">Ese encargo ya no está.</p>`;
+  const client = clientById(job.clientId);
+  const garment = (job.garments || []).find((item) => item.kind || item.photo) || job.garments[0];
+  const group = groupOf(garment && garment.kind);
+  return `
+    ${closeBtn()}
+    <p class="kicker">Encargo</p>
+    <h2>${esc(client ? client.name : "Clienta")} ${job.picky ? `<span class="badge-cm">CM</span>` : ""}</h2>
+    <p>${esc(garmentSummary(job))} <span class="pill ${esc(statusOf(job))}">${esc(statusLabel(job))}</span></p>
+    <div class="shots">
+      <img src="brand/${group.file}" alt="${esc(group.label)}" width="96" height="96">
+      ${garment && garment.photo ? `<img class="shot" alt="Prenda" src="${garment.photo}">` : ""}
+      ${job.shoePhoto ? `<img class="shot" alt="Zapato" src="${job.shoePhoto}">` : ""}
+    </div>
+    <div class="grid-2">
+      <p><span class="swatch" style="display:inline-block;background:${escAttr(colorHex(garment && garment.color))}"></span> ${esc((garment && garment.color) || "Color")}</p>
+      <div>
+        <div>Evento ${esc(shortDate(job.eventDate))}</div>
+        <div>Entrega ${esc(shortDate(job.dueDate))} ${esc(job.dueTime || "")}</div>
+      </div>
+    </div>
+    <p class="who">Total ${esc(money(totalOf(job)))}</p>
+    <div class="row">
+      <button class="btn" type="button" data-action="abrir-completo">Abrir completo</button>
+      <button class="btn-ghost" type="button" data-action="recibo">Recibo</button>
+      <button class="btn-ghost" type="button" data-action="notas">Notas</button>
+      <button class="btn-ghost" type="button" data-close="1">Cerrar</button>
+    </div>
+    <div class="row">
+      <button class="btn-ghost" type="button" data-action="medidas">Medidas</button>
+      <button class="btn plum" type="button" data-action="entregar">${job.status === "entregado" ? "Volver a activar" : "Marcar entregado"}</button>
+      ${client ? `<button class="btn-ghost" type="button" data-open-client="${esc(client.id)}">Ficha</button>` : ""}
+    </div>
+    ${confirmBtn("job", job.id, "Eliminar encargo")}`;
+}
+
+function notasHtml() {
+  const job = moneyJob();
+  if (!job) return `${closeBtn()}<p class="empty">No hay encargo.</p>`;
+  const live = !ui.draft || ui.overlay === "notas" && ui.backOverlay === "resumen";
+  return `
+    ${closeBtn()}
+    <h2>Notas</h2>
+    <p class="meta">Hoja grande, con el teclado.</p>
+    <textarea class="note-sheet" data-keep="note" ${live ? `data-live="note"` : `data-bind="job.note"`}>${esc(job.note || "")}</textarea>
+    <div class="row"><button class="btn-ghost" type="button" data-action="lapiz">${ui.inkOn ? "Ocultar lápiz" : "Hoja con lápiz"}</button></div>
+    ${ui.inkOn ? `<canvas class="pad" data-sheet></canvas><button class="btn-ghost" type="button" data-action="limpiar-lapiz">Limpiar lápiz</button>` : ""}
+    <button class="btn" type="button" data-close="1">Listo</button>`;
+}
+
+function medidasHtml() {
+  const job = moneyJob();
+  if (!job) return `${closeBtn()}<p class="empty">No hay encargo.</p>`;
+  return `
+    ${closeBtn()}
+    <h2>Medidas</h2>
+    ${MEASURES.map(([key, label]) => `
+      <button class="measure ${padOpen("measure", "", key) ? "on" : ""}" type="button" data-num="measure" data-key="${esc(key)}">
+        <span>${esc(label)}</span><b>${esc((job.measures && job.measures[key]) || "—")}</b>
+      </button>
+      ${padOpen("measure", "", key) ? keypadHtml() : ""}`).join("")}
+    <button class="btn" type="button" data-close="1">Listo</button>`;
+}
+
+function reciboHtml() {
+  const job = moneyJob();
+  if (!job) return `${closeBtn()}<p class="empty">No hay recibo.</p>`;
+  const rows = (job.garments || []).filter((item) => item.kind || amount(item.price)).map((item) =>
+    `<div class="money-line"><span>${esc(garmentLabel(item))}</span><button class="btn-ghost" type="button" data-num="price" data-id="${esc(item.id)}">${esc(money(amount(item.price)))}</button></div>`);
+  const ejemplo = !!job.ejemplo;
+  return `
+    ${closeBtn()}
+    <h2>Recibo</h2>
+    <p class="lede">${ejemplo ? "Ejemplo. No está guardado." : esc(clientName(job))}</p>
+    ${rows.join("") || `<p class="meta">Sin precios de prenda todavía.</p>`}
+    ${job.urgent ? `<div class="money-line"><span>Urgencia</span><button class="btn-ghost" type="button" data-num="urgency">${esc(money(amount(job.urgencyFee)))}</button></div>` : ""}
+    <div class="money-line"><span>Total</span><b>${esc(money(totalOf(job)))}</b></div>
+    <div class="money-line"><span>Anticipo</span><button class="btn-ghost" type="button" data-num="deposit">${esc(money(amount(job.deposit)))}</button></div>
+    <div class="money-line"><span>Pendiente</span><b>${esc(money(dueOf(job)))}</b></div>
+    <p class="formula">Total = prendas + urgencia</p>
+    ${padBlock()}
+    ${ejemplo ? "" : `<button class="btn" type="button" data-action="compartir">Compartir</button>`}`;
+}
+
+function cromaticoHtml() {
+  const job = moneyJob();
+  const garment = currentGarment(job);
+  return `
+    ${closeBtn()}
+    <h2>Color</h2>
+    <div class="swatches">
+      ${COLORS.map(([name, hex]) => `<button class="swatch" type="button" data-swatch="${esc(name)}" style="background:${hex}" aria-label="${esc(name)}"></button>`).join("")}
+    </div>
+    <label>Rueda<input type="color" data-hue value="${esc(String(garment && garment.color || "").startsWith("#") ? garment.color : "#103f63")}"></label>
+    <p class="meta">Elegido: ${esc((garment && garment.color) || "ninguno")}</p>
+    <button class="btn" type="button" data-close="1">Listo</button>`;
+}
+
+function currentGarment(job) {
+  if (!job) return null;
+  return (job.garments || []).find((item) => item.id === ui.pickId) || [...(job.garments || [])].reverse().find((item) => item.kind || item.custom) || job.garments[0];
+}
+
+function statsHtml() {
+  const now = new Date();
+  const monthStart = isoFromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+  const monthEnd = isoFromDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  const monthTotal = spanCharged(monthStart, monthEnd);
+  return `
+    ${closeBtn()}
+    <h2>Estadísticas</h2>
+    <p class="meta">Suma de encargos por fecha de entrega. El total de cada uno es prendas + urgencia.</p>
+    ${stat("Esta semana", money(spanCharged(addDays(0), addDays(6))))}
+    ${stat("Este mes", money(monthTotal))}
+    ${stat("Anotado en " + now.getFullYear(), money(spanCharged(`${now.getFullYear()}-01-01`, `${now.getFullYear()}-12-31`)))}
+    ${stat("Estimado anual", money(monthTotal * 12))}
+    ${stat("Clientas", String(state.clients.length))}
+    ${stat("Encargos abiertos", String(state.jobs.filter((job) => job.status !== "entregado").length))}
+    ${stat("Urgencias", String(state.jobs.filter((job) => job.urgent && job.status !== "entregado").length))}`;
+}
+
+function stat(label, value) {
+  return `<div class="stat"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+}
+
+function spanCharged(start, end) {
+  return state.jobs.filter((job) => job.dueDate >= start && job.dueDate <= end).reduce((sum, job) => sum + totalOf(job), 0);
+}
+
+function paramsHtml() {
+  const due = (state.params && state.params.dueTime) || "12:00";
+  return `
+    ${closeBtn()}
+    <h2>Parámetros</h2>
+    <div class="card"><p class="who">Orden de la agenda</p><p>Primero la urgencia, luego el día, y dentro del día por hora.</p></div>
+    <div class="card"><p class="who">Alteración</p><p>En el taller se dice alteración.</p></div>
+    <div class="card"><p class="who">Total</p><p class="formula">Prendas + urgencia.</p></div>
+    <label>Hora de entrega de un encargo nuevo<input data-param="dueTime" type="time" value="${esc(due)}"></label>
+    <button class="btn" type="button" data-action="precios">Precio de urgencia ${esc(money(urgencyPrice()))}</button>`;
+}
+
+function preciosHtml() {
+  return `
+    ${closeBtn()}
+    <h2>Precios</h2>
+    <p class="meta">Precio de urgencia</p>
+    <p class="who" style="font-size:64px;margin:0">${esc(money(urgencyPrice()))}</p>
+    <div class="row">
+      <button class="btn-ghost" type="button" data-step="-5">− 5</button>
+      <button class="btn-ghost" type="button" data-step="5">+ 5</button>
+      <button class="btn" type="button" data-num="urgencyPrice">Teclado</button>
+    </div>
+    ${padOpen("urgencyPrice") ? keypadHtml() : ""}
+    <p class="formula">Total encargo = suma de prendas + urgencia</p>
+    <button class="btn" type="button" data-action="ejemplo-recibo">Ver ejemplo en recibo</button>`;
+}
+
+function codigosHtml() {
+  const access = state.access || { mom: "", dad: "", andres: "" };
+  return `
+    ${closeBtn()}
+    <h2>Códigos</h2>
+    <p class="meta">Sirven para saber quién abrió la agenda en un aparato que ya entró.</p>
+    <form data-form="codigos">
+      <label>Mamá<input name="mom" type="password" required value="${esc(access.mom)}" autocomplete="off"></label>
+      <label>Oscar<input name="dad" type="password" required value="${esc(access.dad)}" autocomplete="off"></label>
+      <label>Andrés<input name="andres" type="password" required value="${esc(access.andres)}" autocomplete="off"></label>
+      ${ui.codeError ? `<p class="warn">${esc(ui.codeError)}</p>` : ""}
+      <button class="btn" type="submit">Guardar códigos</button>
+    </form>`;
+}
+
+function perfilesHtml() {
+  return `
+    ${closeBtn()}
+    <h2>Perfiles</h2>
+    <p class="meta">Cada quien con su correo. Este aparato entró con ${esc(ui.cloudEmail || "nadie")}.</p>
+    ${profileForm("mom", "Mamá")}
+    ${profileForm("dad", "Oscar")}
+    ${profileForm("andres", "Andrés")}`;
+}
+
+function profileForm(who, label) {
+  const saved = (state.profiles && state.profiles[who]) || "";
+  const email = saved || (who === "andres" ? ui.cloudEmail : "");
+  return `
+    <form class="form" data-form="perfil">
+      <p class="who">${esc(label)}</p>
+      <input type="hidden" name="who" value="${who}">
+      <label>Correo<input name="email" type="email" required value="${esc(email)}" autocomplete="off"></label>
+      <label>Contraseña<input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Su contraseña"></label>
+      <button class="btn-ghost" type="submit">${email ? "Guardar entrada" : "Crear entrada"}</button>
+    </form>`;
+}
+
+function cuentaHtml() {
+  return `
+    ${closeBtn()}
+    <h2>Cuenta</h2>
+    <p class="meta">${cloudReady ? "El almacén está conectado." : "Este aparato guarda una copia local."} ${esc(ui.cloudEmail || "")}</p>
+    <form data-form="correo">
+      <label>Correo nuevo<input name="email" type="email" required value="${esc(ui.cloudEmail)}"></label>
+      <button class="btn-ghost" type="submit">Cambiar correo</button>
+    </form>
+    <form data-form="clave">
+      <label>Contraseña nueva<input name="password" type="password" required minlength="6"></label>
+      <label>Otra vez<input name="again" type="password" required minlength="6"></label>
+      <button class="btn-ghost" type="submit">Cambiar contraseña</button>
+    </form>
+    <button class="btn" type="button" data-action="backup">Guardar copia</button>
+    <p class="meta">La copia baja un archivo. No borra clientas, encargos ni citas.</p>`;
+}
+
+function clientaFormHtml() {
+  const draft = ui.draft || { person: "", phone: "" };
+  return `
+    ${closeBtn()}
+    <h2>Nueva clienta</h2>
+    <label>Nombre<input data-keep="person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
+    <label>Teléfono<input data-keep="phone" data-bind="draft.phone" type="tel" value="${esc(draft.phone || "")}"></label>
+    ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
+    <button class="btn" type="button" data-action="guardar-clienta">Guardar</button>`;
+}
+
+function alumnaFormHtml() {
+  const draft = ui.draft || { person: "" };
+  return `
+    ${closeBtn()}
+    <h2>Nueva alumna</h2>
+    <label>Nombre<input data-keep="person" data-bind="draft.person" value="${esc(draft.person || "")}"></label>
+    ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
+    <button class="btn" type="button" data-action="guardar-alumna">Guardar</button>`;
+}
+
+function alumnaFichaHtml() {
+  const student = (state.students || []).find((item) => item.id === ui.studentId);
+  if (!student) return `${closeBtn()}<p class="empty">Esa ficha ya no está.</p>`;
+  student.progress = student.progress || {};
+  return `
+    ${closeBtn()}
+    <h2>${esc(student.name)}</h2>
+    <p class="meta">Toca una clase para cambiar: en curso, hecha, próxima.</p>
+    ${TEMARIO.map((title, index) => {
+      const mark = student.progress[index] || "";
+      const suffix = mark === "hecha" ? " ✓" : mark === "curso" ? " — en curso" : mark === "proxima" ? " — próxima" : "";
+      return `<button class="topic ${esc(mark)}" type="button" data-topic="${index}">${index + 1}. ${esc(title)}${esc(suffix)}</button>`;
+    }).join("")}
+    ${confirmBtn("student", student.id, "Quitar alumna")}`;
+}
+
+function temarioHtml() {
+  return `
+    ${closeBtn()}
+    <h2>Temario</h2>
+    <p class="meta">Curso de costura · taller Sueil</p>
+    <ol>${TEMARIO.map((title, index) => `<li style="font-size:1.2rem;margin:8px 0">${String(index + 1).padStart(2, "0")} ${esc(title)}</li>`).join("")}</ol>`;
+}
+
+function confirmBtn(kind, id, label) {
+  const armed = ui.confirm && ui.confirm.kind === kind && ui.confirm.id === id;
+  if (!armed) return `<button class="btn-ghost" type="button" data-delete="${kind}" data-id="${esc(id)}">${esc(label)}</button>`;
+  return `<div class="row"><button class="btn plum" type="button" data-delete="${kind}" data-id="${esc(id)}">Sí, eliminar</button><button class="btn-ghost" type="button" data-delete="cancel">Cancelar</button></div>`;
+}
+
+function padOpen(kind, id, key) {
+  const pad = ui.pad;
+  return Boolean(pad && pad.kind === kind && (pad.id || "") === (id || "") && (pad.key || "") === (key || ""));
+}
+
+function padBlock(kind) {
+  if (!ui.pad) return "";
+  if (kind && ui.pad.kind !== kind) return "";
+  return keypadHtml();
+}
+
+function keypadHtml() {
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "+"];
+  return `
+    <div class="keypad">
+      <p>${esc(ui.pad.label)}</p>
+      <p class="keypad-value">${esc(ui.pad.value || "0")}</p>
+      <div class="keys">${keys.map((key) => `<button type="button" data-press="${key}">${key}</button>`).join("")}</div>
+      <div class="row">
+        <button type="button" class="btn-ghost" data-press="back">Borrar</button>
+        <button type="button" class="btn" data-press="ok">Listo</button>
+      </div>
+    </div>`;
+}
+
+function moneyJob() {
+  if (ui.sample) return ui.sample;
+  if (ui.draft && ui.draft.job && ui.overlay !== "resumen" && ui.overlay !== "cita" && ui.overlay !== "cita-detalle") return ui.draft.job;
+  return jobById(ui.jobId);
+}
+
+function editingIsLive(job) {
+  return !!job && state.jobs.includes(job);
+}
+
+function makeJob(clientId) {
+  return normalizeJob({
+    id: uid(),
+    clientId: clientId || "",
+    type: "Encargo",
+    eventDate: addDays(30),
+    eventTime: "18:00",
+    dueDate: addDays(20),
+    dueTime: (state.params && state.params.dueTime) || "12:00",
+    price: 0,
+    deposit: 0,
+    urgencyFee: 0,
+    urgent: false,
+    listo: false,
+    broughtShoes: false,
+    picky: false,
+    measures: {},
+    garments: [],
+    status: "activo",
+    note: "",
+    drawing: "",
   });
 }
 
-const actions = {
-  prev() { ui.slide = Math.max(0, ui.slide - 1); render(); },
-  next() { ui.slide = Math.min(slides.length - 1, ui.slide + 1); render(); },
-  enter() { ui.view = "hoy"; render(); },
-  slides() { ui.view = "slides"; render(); },
-  examples() {
-    const access = state.access;
-    state = freshExamples();
-    state.jobs = state.jobs.map(normalizeJob);
-    state.access = access || state.access;
-    persist();
-    ui.view = "hoy";
-    render();
-  },
-  clear() {
-    const access = state.access;
-    state = { clients: [], jobs: [], appointments: [], access };
-    persist();
-    render();
-  },
-  codigos() { ui.view = "ajustes"; ui.codeError = ""; ui.settingsNote = ""; render(); },
-  "create-client"() {
-    const client = { id: uid(), name: "", phone: "", nameDrawing: "" };
-    state.clients.push(client);
-    persist();
-    openClient(client.id);
-  },
-  "add-garment"() {
-    const job = jobById(ui.jobId);
-    if (!job) return;
-    job.garments.push({ id: uid(), name: "", kind: "", custom: "", color: "", note: "", price: 0, done: false });
-    persist();
-    render();
-  },
-  "avisos-on"() { enableAvisos(); },
-  "avisos-off"() { disableAvisos(); },
-  backup() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `sueil-copia-${addDays(0)}.json`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  },
-  deliver() {
-    const job = jobById(ui.jobId);
-    if (!job) return;
-    job.status = job.status === "entregado" ? "activo" : "entregado";
-    persist();
-    render();
-  },
-  "clear-pad"() {
-    const job = jobById(ui.jobId);
-    if (!job) return;
-    job.drawing = "";
-    persist();
-    render();
-  },
-};
+function applyStatus(job, status) {
+  job.status = "activo";
+  if (status === "listo") {
+    job.listo = true;
+    job.urgent = false;
+    (job.garments || []).forEach((item) => { if (item.kind || item.custom) item.done = true; });
+  } else if (status === "urgente") {
+    job.urgent = true;
+    job.listo = false;
+    if (!amount(job.urgencyFee)) job.urgencyFee = urgencyPrice();
+  } else {
+    job.urgent = false;
+    job.listo = false;
+    job.urgencyFee = 0;
+  }
+}
 
-function openClient(id) {
-  ui.clientId = id;
-  ui.jobId = jobsOf(id)[0]?.id || null;
-  ui.view = "ficha";
-  ui.panel = null;
+function openEncargo(id, full) {
+  const existing = id ? jobById(id) : null;
+  const job = existing ? JSON.parse(JSON.stringify(existing)) : makeJob(ui.clientId || "");
+  const client = clientById(job.clientId);
+  ui.jobId = job.id;
+  if (job.clientId) ui.clientId = job.clientId;
+  ui.draft = {
+    person: client ? client.name || "" : "",
+    phone: client ? client.phone || "" : "",
+    custom: "",
+    job,
+    full: full || !!existing,
+  };
+  ui.sample = null;
+  ui.formError = "";
+  ui.suggestHide = false;
+  ui.overlay = "encargo";
+  ui.backOverlay = null;
+  ui.fab = false;
   render();
 }
 
-function openJob(id) {
+function openCita(appt) {
+  const job = appt ? jobById(appt.jobId) : (ui.jobId ? jobById(ui.jobId) : null);
+  const client = job ? clientById(job.clientId) : (ui.clientId ? clientById(ui.clientId) : null);
+  ui.cita = appt ? {
+    id: appt.id,
+    person: client ? client.name : "",
+    phone: client ? client.phone || "" : "",
+    jobId: appt.jobId,
+    date: appt.date,
+    time: appt.time,
+    kind: appt.kind || "Prueba",
+    note: appt.note || "",
+  } : {
+    person: client ? client.name : "",
+    phone: client ? client.phone || "" : "",
+    jobId: job ? job.id : "",
+    date: ui.day || addDays(0),
+    time: "10:00",
+    kind: "Prueba",
+    note: "",
+  };
+  ui.formError = "";
+  ui.suggestHide = false;
+  ui.overlay = "cita";
+  ui.fab = false;
+  render();
+}
+
+function openOverlay(name, back) {
+  ui.backOverlay = back === undefined ? ui.overlay : back;
+  ui.overlay = name;
+  ui.fab = false;
+  render();
+}
+
+function closeTop() {
+  const nested = ["selector", "cromatico", "medidas", "notas", "recibo", "temario"];
+  if (nested.includes(ui.overlay) && ui.backOverlay) {
+    ui.overlay = ui.backOverlay;
+    ui.backOverlay = null;
+    ui.pad = null;
+    if (ui.overlay !== "recibo") ui.sample = null;
+    render();
+    return;
+  }
+  ui.overlay = null;
+  ui.backOverlay = null;
+  ui.draft = null;
+  ui.cita = null;
+  ui.sample = null;
+  ui.pad = null;
+  ui.formError = "";
+  ui.fab = false;
+  ui.inkOn = false;
+  render();
+}
+
+function go(view) {
+  ui.view = view;
+  ui.overlay = null;
+  ui.fab = false;
+  ui.draft = null;
+  ui.cita = null;
+  ui.sample = null;
+  ui.pad = null;
+  ui.confirm = null;
+  if (view !== "clientas") ui.formError = "";
+  render();
+}
+
+function setPath(root, path, value) {
+  const parts = path.split(".");
+  let cur = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    if (!cur[parts[i]]) cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+function onField(event) {
+  const el = event.target;
+  if (!el || !el.dataset) return;
+  if (el.dataset.q) {
+    ui.q[el.dataset.q] = el.value;
+    render();
+    return;
+  }
+  if (el.dataset.bright != null) {
+    ui.brightness = Number(el.value) || 100;
+    localStorage.setItem("sueil-brillo", String(ui.brightness));
+    const app = document.querySelector(".app");
+    if (app) app.style.filter = ui.brightness === 100 ? "" : `brightness(${ui.brightness / 100})`;
+    return;
+  }
+  if (el.dataset.live === "note") {
+    const job = jobById(ui.jobId);
+    if (job) {
+      job.note = el.value;
+      persist();
+    }
+    return;
+  }
+  if (el.dataset.param) {
+    state.params[el.dataset.param] = el.value;
+    persist();
+    return;
+  }
+  if (el.dataset.hue != null) {
+    const garment = currentGarment(moneyJob());
+    if (garment) {
+      garment.color = el.value;
+      if (editingIsLive(moneyJob())) persist();
+    }
+    const label = el.parentElement && el.parentElement.parentElement;
+    if (label) {
+      const note = document.querySelector(".sheet .meta");
+      if (note) note.textContent = "Elegido: " + el.value;
+    }
+    return;
+  }
+  if (!el.dataset.bind) return;
+  if (el.type === "checkbox" && event.type !== "change") return;
+  if (el.type !== "checkbox" && event.type === "change" && el.type !== "date" && el.type !== "time") return;
+  const value = el.type === "checkbox" ? el.checked : el.value;
+  if (el.dataset.bind.startsWith("cita.") && ui.cita) setPath(ui.cita, el.dataset.bind.slice(5), value);
+  if (el.dataset.bind.startsWith("draft.") && ui.draft) setPath(ui.draft, el.dataset.bind.slice(6), value);
+  if (el.dataset.bind.startsWith("job.") && ui.draft && ui.draft.job) {
+    const key = el.dataset.bind.slice(4);
+    ui.draft.job[key] = value;
+  }
+  if (el.dataset.bind === "draft.person" || el.dataset.bind === "cita.person") ui.suggestHide = false;
+  if (el.dataset.bind === "draft.custom" && ui.draft && ui.draft.job && ui.pickId) {
+    const item = ui.draft.job.garments.find((garment) => garment.id === ui.pickId);
+    if (item && item.kind === "Otro") item.custom = el.value;
+  }
+  if (el.dataset.render === "1" || el.type === "checkbox" || el.type === "date" || el.type === "time") render();
+}
+
+function onClick(event) {
+  const btn = event.target.closest("button, [data-open-job], [data-open-client], [data-open-appt]");
+  if (event.target.dataset && event.target.dataset.backdrop) {
+    closeTop();
+    return;
+  }
+  if (!btn) return;
+  if (btn.dataset.close != null) { closeTop(); return; }
+  if (btn.dataset.go) { go(btn.dataset.go); return; }
+  if (btn.dataset.fab) { onFab(btn.dataset.fab); return; }
+  if (btn.dataset.day) { ui.day = btn.dataset.day; render(); return; }
+  if (btn.dataset.urg) { ui.urgSort = btn.dataset.urg; render(); return; }
+  if (btn.dataset.pend) { ui.pendHub = btn.dataset.pend; render(); return; }
+  if (btn.dataset.arch) { ui.archTab = btn.dataset.arch; render(); return; }
+  if (btn.dataset.openJob) { openResumen(btn.dataset.openJob); return; }
+  if (btn.dataset.openAppt) { openAppt(btn.dataset.openAppt); return; }
+  if (btn.dataset.openClient) { openClient(btn.dataset.openClient); return; }
+  if (btn.dataset.pill) { onPill(btn.dataset.pill); return; }
+  if (btn.dataset.text) {
+    ui.text = btn.dataset.text;
+    localStorage.setItem("sueil-texto", ui.text);
+    render();
+    return;
+  }
+  if (btn.dataset.switch) { onSwitch(btn.dataset.switch); return; }
+  if (btn.dataset.citaKind && ui.cita) { ui.cita.kind = btn.dataset.citaKind; render(); return; }
+  if (btn.dataset.status && ui.draft) { applyStatus(ui.draft.job, btn.dataset.status); render(); return; }
+  if (btn.dataset.group != null) { ui.pickGroup = btn.dataset.group; ui.overlay = "selector"; ui.backOverlay = ui.backOverlay || "encargo"; render(); return; }
+  if (btn.dataset.kind) { pickKind(btn.dataset.kind); return; }
+  if (btn.dataset.confirmClient) { confirmClient(btn.dataset.confirmClient); return; }
+  if (btn.dataset.suggestNo != null) { ui.suggestHide = true; render(); return; }
+  if (btn.dataset.dropGarment) { dropGarment(btn.dataset.dropGarment); return; }
+  if (btn.dataset.cam) { shoot(btn.dataset.cam, btn.dataset.id, "cam"); return; }
+  if (btn.dataset.gal) { shoot(btn.dataset.gal, btn.dataset.id, "gal"); return; }
+  if (btn.dataset.num) { openPad(btn); return; }
+  if (btn.dataset.press) { pressKey(btn.dataset.press); return; }
+  if (btn.dataset.swatch) { paintColor(btn.dataset.swatch); return; }
+  if (btn.dataset.step) { stepPrice(Number(btn.dataset.step)); return; }
+  if (btn.dataset.student) { ui.studentId = btn.dataset.student; openOverlay("alumna-ficha", null); return; }
+  if (btn.dataset.topic != null) { cycleTopic(Number(btn.dataset.topic)); return; }
+  if (btn.dataset.delete) { onDelete(btn.dataset.delete, btn.dataset.id); return; }
+  if (btn.dataset.action) { onAction(btn.dataset.action); }
+}
+
+function onFab(action) {
+  if (action === "toggle") { ui.fab = !ui.fab; render(); return; }
+  ui.fab = false;
+  if (action === "cita-nueva") { ui.clientId = null; ui.jobId = null; openCita(null); return; }
+  if (action === "encargo-nuevo") { ui.clientId = null; openEncargo(null, false); return; }
+  if (action === "clienta-nueva") {
+    ui.draft = { person: "", phone: "" };
+    ui.formError = "";
+    openOverlay("clienta", null);
+    return;
+  }
+  if (action === "archivos" || action === "ajustes" || action === "clientas") go(action);
+}
+
+function openResumen(id) {
   const job = jobById(id);
   if (!job) return;
   ui.jobId = job.id;
   ui.clientId = job.clientId;
-  ui.view = "ficha";
-  ui.panel = null;
+  ui.draft = null;
+  ui.sample = null;
+  ui.overlay = "resumen";
+  ui.backOverlay = null;
+  ui.fab = false;
   render();
 }
 
-function saveClient(data) {
-  const name = String(data.name || "").trim();
-  if (!name) return;
-  const client = { id: uid(), name, phone: String(data.phone || "").trim() };
-  state.clients.push(client);
+function openAppt(id) {
+  ui.apptId = id;
+  ui.overlay = "cita-detalle";
+  ui.fab = false;
+  render();
+}
+
+function openClient(id) {
+  ui.clientId = id;
+  ui.view = "clientas";
+  ui.overlay = null;
+  ui.fab = false;
+  const jobs = jobsOf(id);
+  ui.jobId = jobs[0] ? jobs[0].id : null;
+  render();
+}
+
+function onPill(id) {
+  const job = jobById(id);
+  if (!job) return;
+  if (statusOf(job) === "pendiente") {
+    job.listo = true;
+    persist();
+    render();
+    return;
+  }
+  openResumen(id);
+}
+
+function onSwitch(name) {
+  if (name === "sonido") {
+    setFlag("sueil-sonido", localStorage.getItem("sueil-sonido") !== "1");
+    render();
+    return;
+  }
+  const key = name === "avisos-citas" ? "sueil-avisos-citas" : "sueil-avisos-urgencias";
+  const next = !flagOn(key, "sueil-avisos");
+  if (next) enableAvisos().then(() => { setFlag(key, true); render(); });
+  else { setFlag(key, false); render(); }
+}
+
+function pickKind(kind) {
+  if (!ui.draft || !ui.draft.job) openEncargo(ui.jobId, false);
+  const job = ui.draft.job;
+  const custom = kind === "Otro" ? (ui.draft.custom || "") : "";
+  if (ui.pickId) {
+    const item = job.garments.find((garment) => garment.id === ui.pickId);
+    if (item) {
+      item.kind = kind;
+      item.custom = custom;
+      item.name = garmentTitle(item);
+    }
+  } else {
+    const item = { id: uid(), kind, custom, color: "", note: "", photo: "", price: 0, done: false, name: kind };
+    job.garments.push(item);
+    ui.pickId = item.id;
+  }
+  ui.overlay = "encargo";
+  ui.backOverlay = null;
+  render();
+}
+
+function dropGarment(id) {
+  if (!ui.draft) return;
+  ui.draft.job.garments = ui.draft.job.garments.filter((item) => item.id !== id);
+  render();
+}
+
+function confirmClient(id) {
+  const client = clientById(id);
+  if (!client) return;
+  const openJob = state.jobs.find((job) => job.clientId === client.id && job.status !== "entregado");
+  if (ui.cita) {
+    ui.cita.person = client.name || "";
+    ui.cita.phone = client.phone || "";
+    if (openJob) ui.cita.jobId = openJob.id;
+  }
+  if (ui.draft && ui.overlay !== "cita") {
+    ui.draft.person = client.name || "";
+    ui.draft.phone = client.phone || "";
+    if (ui.draft.job && !state.jobs.some((job) => job.id === ui.draft.job.id)) ui.draft.job.clientId = client.id;
+  }
+  ui.suggestHide = true;
+  ui.clientId = client.id;
+  render();
+}
+
+function shoot(part, id, which) {
+  ui.photoSlot = { part, id: id || ui.pickId || "" };
+  const input = document.getElementById(which === "cam" ? "cam" : "gal");
+  if (input) input.click();
+}
+
+function openPad(btn) {
+  const kind = btn.dataset.num;
+  const job = moneyJob();
+  let value = "";
+  let label = "Número";
+  if (kind === "price" && job) {
+    const item = (job.garments || []).find((garment) => garment.id === btn.dataset.id) || currentGarment(job);
+    value = item ? String(item.price || "") : "";
+    label = "Precio";
+    ui.pickId = item ? item.id : "";
+  }
+  if (kind === "deposit" && job) { value = String(job.deposit || ""); label = "Anticipo"; }
+  if (kind === "urgency" && job) { value = String(job.urgencyFee || ""); label = "Urgencia"; }
+  if (kind === "urgencyPrice") { value = String(urgencyPrice()); label = "Precio de urgencia"; }
+  if (kind === "measure" && job) {
+    value = (job.measures && job.measures[btn.dataset.key]) || "";
+    label = (MEASURES.find(([key]) => key === btn.dataset.key) || [, "Medida"])[1];
+  }
+  ui.pad = { kind, id: btn.dataset.id || ui.pickId || "", key: btn.dataset.key || "", value, label };
+  render();
+}
+
+function writePad(value) {
+  const pad = ui.pad;
+  if (!pad) return;
+  const job = moneyJob();
+  if (pad.kind === "urgencyPrice") {
+    state.params.urgencyPrice = value;
+    pad.value = value;
+    persist();
+    return;
+  }
+  if (!job) return;
+  if (pad.kind === "deposit") job.deposit = value;
+  if (pad.kind === "urgency") job.urgencyFee = value;
+  if (pad.kind === "measure") {
+    job.measures = job.measures || {};
+    job.measures[pad.key] = value;
+  }
+  if (pad.kind === "price") {
+    const item = (job.garments || []).find((garment) => garment.id === pad.id);
+    if (item) item.price = value;
+    job.price = (job.garments || []).reduce((sum, garment) => sum + amount(garment.price), 0);
+  }
+  pad.value = value;
+  if (editingIsLive(job) || pad.kind === "urgencyPrice") persist();
+}
+
+function pressKey(key) {
+  if (!ui.pad) return;
+  if (key === "ok") { ui.pad = null; render(); return; }
+  let value = ui.pad.value || "";
+  if (key === "back") value = value.slice(0, -1);
+  else if (value.length < 18) value += key;
+  writePad(value);
+  render();
+}
+
+function paintColor(name) {
+  const garment = currentGarment(moneyJob());
+  if (!garment) return;
+  garment.color = name;
+  if (editingIsLive(moneyJob())) persist();
+  render();
+}
+
+function stepPrice(delta) {
+  const next = Math.max(0, urgencyPrice() + delta);
+  state.params.urgencyPrice = next;
+  persist();
+  render();
+}
+
+function cycleTopic(index) {
+  const student = (state.students || []).find((item) => item.id === ui.studentId);
+  if (!student) return;
+  student.progress = student.progress || {};
+  const order = ["", "curso", "hecha", "proxima"];
+  const now = student.progress[index] || "";
+  student.progress[index] = order[(order.indexOf(now) + 1) % order.length];
+  const marks = Object.values(student.progress);
+  student.status = marks.some((mark) => mark === "hecha" || mark === "curso") ? "activa" : "nueva";
+  persist();
+  render();
+}
+
+function onDelete(kind, id) {
+  if (kind === "cancel") { ui.confirm = null; render(); return; }
+  if (!ui.confirm || ui.confirm.kind !== kind || ui.confirm.id !== id) {
+    ui.confirm = { kind, id };
+    render();
+    return;
+  }
+  ui.confirm = null;
+  if (kind === "appt") removeAppt(id);
+  if (kind === "job") removeJob(id);
+  if (kind === "client") removeClient(id);
+  if (kind === "student") {
+    state.students = (state.students || []).filter((item) => item.id !== id);
+    ui.overlay = null;
+    persist();
+    render();
+  }
+}
+
+function removeAppt(id) {
+  state.appointments = state.appointments.filter((item) => item.id !== id);
+  ui.overlay = null;
+  persist();
+  render();
+}
+
+function removeJob(id) {
+  state.appointments = state.appointments.filter((item) => item.jobId !== id);
+  state.jobs = state.jobs.filter((item) => item.id !== id);
+  ui.overlay = null;
+  ui.jobId = null;
+  persist();
+  render();
+}
+
+function removeClient(id) {
+  const jobIds = new Set(jobsOf(id).map((job) => job.id));
+  state.appointments = state.appointments.filter((item) => !jobIds.has(item.jobId));
+  state.jobs = state.jobs.filter((job) => job.clientId !== id);
+  state.clients = state.clients.filter((client) => client.id !== id);
+  ui.clientId = null;
+  ui.jobId = null;
+  ui.overlay = null;
+  ui.view = "clientas";
+  persist();
+  render();
+}
+
+function onAction(action) {
+  if (action === "guardar-cita") return saveCita();
+  if (action === "guardar-encargo") return commitEncargo();
+  if (action === "guardar-clienta") return saveClientForm();
+  if (action === "guardar-alumna") return saveAlumna();
+  if (action === "editar-cita") {
+    const appt = state.appointments.find((item) => item.id === ui.apptId);
+    if (appt) openCita(appt);
+    return;
+  }
+  if (action === "cita-hecha") {
+    const appt = state.appointments.find((item) => item.id === ui.apptId);
+    if (!appt) return;
+    appt.done = !appt.done;
+    persist();
+    closeTop();
+    return;
+  }
+  if (action === "encargo-de-clienta") { openEncargo(null, false); return; }
+  if (action === "cita-de-clienta") { openCita(null); return; }
+  if (action === "clientas-lista") { ui.clientId = null; render(); return; }
+  if (action === "expandir" && ui.draft) { ui.draft.full = true; render(); return; }
+  if (action === "abrir-completo") { openEncargo(ui.jobId, true); return; }
+  if (action === "notas") { ui.inkOn = false; openOverlay("notas"); return; }
+  if (action === "medidas") { openOverlay("medidas"); return; }
+  if (action === "recibo") { ui.sample = null; openOverlay("recibo"); return; }
+  if (action === "color") { openOverlay("cromatico"); return; }
+  if (action === "lapiz") { ui.inkOn = !ui.inkOn; render(); return; }
+  if (action === "limpiar-lapiz") {
+    const job = moneyJob();
+    if (job) {
+      job.drawing = "";
+      if (editingIsLive(job)) persist();
+      render();
+    }
+    return;
+  }
+  if (action === "entregar") {
+    const job = jobById(ui.jobId);
+    if (!job) return;
+    job.status = job.status === "entregado" ? "activo" : "entregado";
+    persist();
+    toast(job.status === "entregado" ? "Entregado" : "Otra vez activo");
+    return;
+  }
+  if (action === "compartir") return shareReceipt();
+  if (action === "stats") return openOverlay("stats", null);
+  if (action === "params") return openOverlay("params", null);
+  if (action === "precios") return openOverlay("precios", null);
+  if (action === "codigos") return openOverlay("codigos", null);
+  if (action === "perfiles") return openOverlay("perfiles", null);
+  if (action === "cuenta") return openOverlay("cuenta", null);
+  if (action === "temario") return openOverlay("temario", null);
+  if (action === "alumna-nueva") {
+    ui.draft = { person: "" };
+    ui.formError = "";
+    openOverlay("alumna", null);
+    return;
+  }
+  if (action === "ejemplo-recibo") {
+    ui.sample = {
+      ejemplo: true,
+      id: "ejemplo",
+      clientId: "",
+      type: "Ejemplo",
+      urgent: true,
+      urgencyFee: urgencyPrice(),
+      deposit: 300,
+      garments: [{ id: "ej", kind: "V. fiesta", price: 700, color: "rosa", done: false }],
+      status: "activo",
+      note: "",
+    };
+    openOverlay("recibo", "precios");
+    return;
+  }
+  if (action === "backup") return downloadBackup();
+  if (action === "salir") return signOut();
+}
+
+function saveCita() {
+  const cita = ui.cita;
+  if (!cita) return;
+  const phone = String(cita.phone || "");
+  if (phoneDigits(phone).length < 10) {
+    ui.formError = "Para agendar necesita el número telefónico.";
+    render();
+    return;
+  }
+  if (!String(cita.person || "").trim() || !cita.date || !cita.time) {
+    ui.formError = "Escribe el nombre, la fecha y la hora.";
+    render();
+    return;
+  }
+  const clash = state.appointments.some((item) => item.id !== cita.id && item.date === cita.date && item.time === cita.time);
+  if (clash) {
+    ui.formError = "Esa fecha y esa hora ya tienen cita.";
+    render();
+    return;
+  }
+  const jobId = jobForAppointment({
+    person: cita.person,
+    phone,
+    jobId: cita.jobId,
+    date: cita.date,
+    time: cita.time,
+    kind: cita.kind,
+  });
+  if (cita.id) {
+    const appt = state.appointments.find((item) => item.id === cita.id);
+    if (appt) Object.assign(appt, { jobId, date: cita.date, time: cita.time, kind: cita.kind, note: cita.note || "" });
+  } else {
+    state.appointments.push({ id: uid(), jobId, date: cita.date, time: cita.time, kind: cita.kind || "Prueba", note: cita.note || "", done: false });
+  }
+  ui.day = cita.date;
+  ui.formError = "";
+  ui.cita = null;
+  ui.overlay = null;
+  ui.view = "agenda";
+  persist();
+  render();
+}
+
+function jobForAppointment(data) {
+  if (data.jobId && jobById(data.jobId)) {
+    const job = jobById(data.jobId);
+    const client = clientById(job.clientId);
+    if (client && data.phone) client.phone = data.phone;
+    return data.jobId;
+  }
+  const name = String(data.person || "").trim();
+  let client = state.clients.find((item) => String(item.name || "").trim().toLowerCase() === name.toLowerCase());
+  if (!client) {
+    client = { id: uid(), name, phone: data.phone || "", nameDrawing: "" };
+    state.clients.push(client);
+  } else if (data.phone) client.phone = data.phone;
+  let job = state.jobs.find((item) => item.clientId === client.id && item.status !== "entregado");
+  if (!job) {
+    job = makeJob(client.id);
+    state.jobs.push(job);
+  }
+  ui.clientId = client.id;
+  ui.jobId = job.id;
+  return job.id;
+}
+
+function commitEncargo() {
+  const draft = ui.draft;
+  if (!draft) return;
+  const name = String(draft.person || "").trim();
+  if (!name) { ui.formError = "Escribe el nombre."; render(); return; }
+  const phone = String(draft.phone || "").trim();
+  let client = state.clients.find((item) => String(item.name || "").trim().toLowerCase() === name.toLowerCase());
+  if (!client && phoneDigits(phone).length < 10 && !draft.job.clientId) {
+    ui.formError = "Para una clienta nueva hace falta el teléfono.";
+    render();
+    return;
+  }
+  if (!client) {
+    client = { id: uid(), name, phone, nameDrawing: "" };
+    state.clients.push(client);
+  } else if (phone) client.phone = phone;
+  const job = draft.job;
+  job.clientId = client.id;
+  job.garments = (job.garments || []).filter((item) => item.kind || item.custom || item.photo || amount(item.price));
+  if (!job.garments.length) job.garments = [{ id: uid(), kind: "", custom: "", color: "", note: "", price: 0, done: false, photo: "" }];
+  job.type = garmentSummary(job) || "Encargo";
+  job.price = job.garments.reduce((sum, item) => sum + amount(item.price), 0);
+  const existing = state.jobs.find((item) => item.id === job.id);
+  if (existing) Object.assign(existing, job);
+  else state.jobs.push(job);
+  ui.jobId = job.id;
+  ui.clientId = client.id;
+  ui.draft = null;
+  ui.formError = "";
+  ui.overlay = "resumen";
+  persist();
+  render();
+}
+
+function saveClientForm() {
+  const name = String(ui.draft && ui.draft.person || "").trim();
+  const phone = String(ui.draft && ui.draft.phone || "").trim();
+  if (!name) { ui.formError = "Escribe el nombre."; render(); return; }
+  let client = state.clients.find((item) => String(item.name || "").trim().toLowerCase() === name.toLowerCase());
+  if (!client) {
+    client = { id: uid(), name, phone, nameDrawing: "" };
+    state.clients.push(client);
+  } else if (phone) client.phone = phone;
   persist();
   openClient(client.id);
+}
+
+function saveAlumna() {
+  const name = String(ui.draft && ui.draft.person || "").trim();
+  if (!name) { ui.formError = "Escribe el nombre."; render(); return; }
+  const student = { id: uid(), name, status: "nueva", progress: {} };
+  state.students = state.students || [];
+  state.students.push(student);
+  ui.studentId = student.id;
+  ui.draft = null;
+  ui.overlay = "alumna-ficha";
+  persist();
+  render();
+}
+
+function shareReceipt() {
+  const job = jobById(ui.jobId);
+  if (!job) return;
+  const lines = [`Sueil`, clientName(job), ...((job.garments || []).map((item) => `${garmentLabel(item)} ${money(amount(item.price))}`))];
+  if (job.urgent) lines.push(`Urgencia ${money(amount(job.urgencyFee))}`);
+  lines.push(`Total ${money(totalOf(job))}`, `Anticipo ${money(amount(job.deposit))}`, `Pendiente ${money(dueOf(job))}`);
+  const text = lines.join("\n");
+  const done = () => toast("Recibo copiado");
+  if (navigator.share) {
+    navigator.share({ title: "Sueil", text }).catch(() => navigator.clipboard?.writeText(text).then(done).catch(() => toast(text)));
+    return;
+  }
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done).catch(() => toast("No se pudo copiar"));
+}
+
+function downloadBackup() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `sueil-copia-${addDays(0)}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  toast("Copia lista");
+}
+
+function toast(message) {
+  ui.toast = message;
+  render();
+  setTimeout(() => {
+    if (ui.toast === message) {
+      ui.toast = "";
+      render();
+    }
+  }, 1400);
+}
+
+async function signOut() {
+  try { if (db) await db.auth.signOut(); } catch (err) { console.warn(err); }
+  sessionStorage.removeItem(SESSION);
+  cloudReady = false;
+  ui.cloud = "entrar";
+  ui.overlay = null;
+  render();
+}
+
+function onSubmit(event) {
+  const form = event.target;
+  if (!form || !form.dataset || !form.dataset.form) return;
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(form));
+  if (form.dataset.form === "nube") cloudEnter(data, event.submitter && event.submitter.name === "crear");
+  if (form.dataset.form === "entrar") enterCode(data);
+  if (form.dataset.form === "codigos") saveCodes(data);
+  if (form.dataset.form === "perfil") saveProfile(data);
+  if (form.dataset.form === "correo") changeEmail(data);
+  if (form.dataset.form === "clave") changePassword(data);
 }
 
 function enterCode(data) {
   const code = String(data.code || "").trim();
   const access = state.access || {};
   const who = code === access.mom ? "mamá" : code === access.dad ? "Oscar" : code === access.andres ? "Andrés" : "";
-  if (!who) {
-    ui.badCode = true;
-    render();
-    return;
-  }
+  if (!who) { ui.badCode = true; render(); return; }
   ui.badCode = false;
   ui.who = who;
   sessionStorage.setItem(SESSION, "1");
@@ -1378,67 +2462,8 @@ function saveCodes(data) {
   ui.settingsNote = "Códigos guardados.";
   sessionStorage.setItem(SESSION, "1");
   persist();
+  ui.overlay = null;
   ui.view = "ajustes";
-  render();
-}
-
-function makeJob(clientId) {
-  return normalizeJob({
-    id: uid(),
-    clientId,
-    type: "Vestido",
-    eventDate: addDays(30),
-    eventTime: "18:00",
-    dueDate: addDays(20),
-    dueTime: "12:00",
-    price: 0,
-    deposit: 0,
-    urgencyFee: 0,
-    urgent: false,
-    broughtShoes: false,
-    picky: false,
-    measures: {},
-    garments: [],
-    status: "activo",
-    note: "",
-    drawing: "",
-  });
-}
-
-function saveJob() {
-  const job = makeJob(ui.clientId);
-  state.jobs.push(job);
-  persist();
-  ui.jobId = job.id;
-  ui.panel = null;
-  render();
-}
-
-function removeAppt(id) {
-  state.appointments = state.appointments.filter((item) => item.id !== id);
-  persist();
-  render();
-}
-
-function removeJob(id) {
-  const job = jobById(id);
-  state.appointments = state.appointments.filter((item) => item.jobId !== id);
-  state.jobs = state.jobs.filter((item) => item.id !== id);
-  if (job && ui.jobId === id) ui.jobId = jobsOf(job.clientId)[0]?.id || null;
-  persist();
-  render();
-}
-
-function removeClient(id) {
-  const jobIds = new Set(jobsOf(id).map((job) => job.id));
-  state.appointments = state.appointments.filter((item) => !jobIds.has(item.jobId));
-  state.jobs = state.jobs.filter((job) => job.clientId !== id);
-  state.clients = state.clients.filter((client) => client.id !== id);
-  ui.clientId = null;
-  ui.jobId = null;
-  ui.panel = null;
-  ui.view = "clientas";
-  persist();
   render();
 }
 
@@ -1455,7 +2480,7 @@ async function saveProfile(data) {
   }
   const current = (ui.cloudEmail || "").toLowerCase();
   const previous = String(state.profiles[who] || "").toLowerCase();
-  if (current && (email.toLowerCase() === current || previous === current)) {
+  if (db && current && (email.toLowerCase() === current || previous === current)) {
     const update = { password };
     if (email.toLowerCase() !== current) update.email = email;
     const { error } = await db.auth.updateUser(update);
@@ -1464,9 +2489,7 @@ async function saveProfile(data) {
       ui.cloudEmail = email.toLowerCase() === current ? ui.cloudEmail : email;
       persist();
     }
-    ui.settingsNote = error
-      ? "No se pudo guardar la entrada de " + label + "."
-      : "Listo. La entrada de " + label + " quedó en este aparato.";
+    ui.settingsNote = error ? "No se pudo guardar la entrada de " + label + "." : "Listo. La entrada de " + label + " quedó guardada.";
     render();
     return;
   }
@@ -1487,9 +2510,7 @@ async function saveProfile(data) {
       ui.settingsNote = "Ese correo ya existe. " + label + " entra con él y su contraseña.";
     } else if (msg.includes("registro cerrado")) {
       ui.settingsNote = "El almacén todavía solo deja una cuenta. Falta pegar el paso de las tres entradas.";
-    } else {
-      ui.settingsNote = "No se pudo crear la entrada de " + label + ".";
-    }
+    } else ui.settingsNote = "No se pudo crear la entrada de " + label + ".";
     render();
     return;
   }
@@ -1498,11 +2519,9 @@ async function saveProfile(data) {
     await guest.auth.signOut();
     state.profiles[who] = email;
     persist();
-    if (inserted.error && inserted.error.code !== "23505") {
-      ui.settingsNote = "La cuenta de " + label + " se creó, pero el almacén todavía no la deja entrar. Falta el paso de las tres entradas.";
-    } else {
-      ui.settingsNote = "Listo. " + label + " entra con su correo, no con el tuyo.";
-    }
+    ui.settingsNote = inserted.error && inserted.error.code !== "23505"
+      ? "La cuenta de " + label + " se creó, pero el almacén todavía no la deja entrar."
+      : "Listo. " + label + " entra con su correo.";
     render();
     return;
   }
@@ -1512,30 +2531,40 @@ async function saveProfile(data) {
   render();
 }
 
+async function changeEmail(data) {
+  const email = String(data.email || "").trim();
+  if (!db) { ui.settingsNote = "Todavía no hay cuenta del taller en este aparato."; render(); return; }
+  const { error } = await db.auth.updateUser({ email });
+  ui.settingsNote = error ? "No se pudo cambiar el correo." : "Revisa el correo nuevo y confirma el cambio.";
+  render();
+}
+
+async function changePassword(data) {
+  const password = String(data.password || "");
+  const again = String(data.again || "");
+  if (password.length < 6) { ui.settingsNote = "La contraseña necesita al menos 6 caracteres."; render(); return; }
+  if (password !== again) { ui.settingsNote = "Las dos contraseñas no coinciden."; render(); return; }
+  if (!db) { ui.settingsNote = "Todavía no hay cuenta del taller en este aparato."; render(); return; }
+  const { error } = await db.auth.updateUser({ password });
+  ui.settingsNote = error ? "No se pudo cambiar la contraseña." : "Contraseña cambiada.";
+  render();
+}
+
 function avisosStatus() {
   if (!("Notification" in window)) return "Este teléfono no muestra avisos desde la página.";
   if (Notification.permission === "denied") return "Están bloqueados. En el iPhone: Ajustes, Notificaciones, y permite Sueil.";
-  if (!localStorage.getItem("sueil-avisos")) return "Todavía apagados en este aparato.";
-  if (Notification.permission === "granted") return "Encendidos. Avisan una hora antes de la cita, a la hora, y si hay un urgente para hoy.";
-  return "Pulsa Activar avisos y acepta el permiso.";
+  if (!flagOn("sueil-avisos-citas", "sueil-avisos") && !flagOn("sueil-avisos-urgencias", "sueil-avisos")) return "Todavía apagados en este aparato.";
+  if (Notification.permission === "granted") return "Encendidos. Avisan de la cita y si hay un urgente para hoy.";
+  return "Pulsa el aviso y acepta el permiso.";
 }
 
 async function registerWorker() {
   if (!("serviceWorker" in navigator)) return null;
-  try {
-    return await navigator.serviceWorker.register("sw.js");
-  } catch (err) {
-    console.warn(err);
-    return null;
-  }
+  try { return await navigator.serviceWorker.register("sw.js"); } catch (err) { console.warn(err); return null; }
 }
 
 function toldAlready(tag) {
-  try {
-    return JSON.parse(localStorage.getItem("sueil-avisados") || "[]").includes(tag);
-  } catch (err) {
-    return false;
-  }
+  try { return JSON.parse(localStorage.getItem("sueil-avisados") || "[]").includes(tag); } catch (err) { return false; }
 }
 
 function markTold(tag) {
@@ -1548,16 +2577,11 @@ function markTold(tag) {
 async function ping(title, body, tag) {
   if (toldAlready(tag)) return;
   markTold(tag);
+  if (localStorage.getItem("sueil-sonido") === "1" && navigator.vibrate) navigator.vibrate(80);
   const ready = await registerWorker();
   const active = ready && navigator.serviceWorker.controller;
-  if (active) {
-    active.postMessage({ type: "aviso", title, body, tag });
-    return;
-  }
-  if (ready) {
-    await ready.showNotification(title, { body, tag, lang: "es" });
-    return;
-  }
+  if (active) { active.postMessage({ type: "aviso", title, body, tag }); return; }
+  if (ready) { await ready.showNotification(title, { body, tag, lang: "es" }); return; }
   new Notification(title, { body, tag, lang: "es" });
 }
 
@@ -1569,24 +2593,28 @@ function minutesUntil(date, time) {
 }
 
 function checkAvisos() {
-  if (localStorage.getItem("sueil-avisos") !== "1") return;
+  const citasOn = flagOn("sueil-avisos-citas", "sueil-avisos");
+  const urgOn = flagOn("sueil-avisos-urgencias", "sueil-avisos");
+  if (!citasOn && !urgOn) return;
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const today = addDays(0);
-  (state.appointments || []).forEach((appt) => {
-    if (appt.date !== today) return;
-    const mins = minutesUntil(appt.date, appt.time);
-    const job = jobById(appt.jobId);
-    const client = job ? clientById(job.clientId) : null;
-    const who = (client && client.name) || "Cita";
-    const line = `${appt.time} · ${who} · ${appt.kind || "Cita"}`;
-    if (mins <= 60 && mins > 0) ping("Cita en menos de una hora", line, `soon:${appt.id}:${today}`);
-    if (mins <= 0 && mins > -20) ping("Cita ahora", line, `now:${appt.id}:${today}`);
-  });
-  (state.jobs || []).forEach((job) => {
-    if (!job.urgent || job.status === "entregado" || job.dueDate !== today) return;
-    const client = clientById(job.clientId);
-    ping("Urgente para hoy", `${(client && client.name) || "Clienta"} · ${job.type} · ${job.dueTime || ""}`, `urgent:${job.id}:${today}`);
-  });
+  if (citasOn) {
+    state.appointments.forEach((appt) => {
+      if (appt.date !== today || appt.done) return;
+      const mins = minutesUntil(appt.date, appt.time);
+      const job = jobById(appt.jobId);
+      const who = job ? clientName(job) : "Cita";
+      const line = `${appt.time} · ${who} · ${appt.kind || "Cita"}`;
+      if (mins <= 60 && mins > 0) ping("Cita en menos de una hora", line, `soon:${appt.id}:${today}`);
+      if (mins <= 0 && mins > -20) ping("Cita ahora", line, `now:${appt.id}:${today}`);
+    });
+  }
+  if (urgOn) {
+    state.jobs.forEach((job) => {
+      if (!job.urgent || job.status === "entregado" || job.dueDate !== today) return;
+      ping("Urgente para hoy", `${clientName(job)} · ${garmentSummary(job)}`, `urgent:${job.id}:${today}`);
+    });
+  }
 }
 
 async function enableAvisos() {
@@ -1598,7 +2626,7 @@ async function enableAvisos() {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
     localStorage.setItem("sueil-avisos", "0");
-    ui.settingsNote = "No se activaron. En el iPhone abre Sueil desde el ícono de la pantalla de inicio y vuelve a pulsar Activar avisos.";
+    ui.settingsNote = "No se activaron. En el iPhone abre Sueil desde el ícono de inicio.";
     render();
     return;
   }
@@ -1606,232 +2634,13 @@ async function enableAvisos() {
   ui.settingsNote = "Avisos encendidos en este aparato.";
   await registerWorker();
   checkAvisos();
-  render();
-}
-
-function disableAvisos() {
-  localStorage.setItem("sueil-avisos", "0");
-  ui.settingsNote = "Avisos apagados en este aparato.";
-  render();
-}
-
-async function changeEmail(data) {
-  const email = String(data.email || "").trim();
-  ui.codeError = "";
-  if (!db) {
-    ui.settingsNote = "Todavía no hay cuenta del taller en este aparato.";
-    render();
-    return;
-  }
-  const { error } = await db.auth.updateUser({ email });
-  ui.settingsNote = error
-    ? "No se pudo cambiar el correo. Usa uno distinto al de ahora."
-    : "Revisa el correo nuevo y confirma el cambio.";
-  render();
-}
-
-async function changePassword(data) {
-  const password = String(data.password || "");
-  const again = String(data.again || "");
-  if (password.length < 6) {
-    ui.settingsNote = "La contraseña necesita al menos 6 caracteres.";
-    render();
-    return;
-  }
-  if (password !== again) {
-    ui.settingsNote = "Las dos contraseñas no coinciden.";
-    render();
-    return;
-  }
-  if (!db) {
-    ui.settingsNote = "Todavía no hay cuenta del taller en este aparato.";
-    render();
-    return;
-  }
-  const { error } = await db.auth.updateUser({ password });
-  ui.settingsNote = error
-    ? "No se pudo cambiar la contraseña."
-    : "Contraseña cambiada. En los otros aparatos entra con esta.";
-  render();
-}
-
-function jobForAppointment(data) {
-  const phone = String(data.phone || "").trim();
-  if (data.jobId && jobById(data.jobId)) {
-    const job = jobById(data.jobId);
-    const client = clientById(job.clientId);
-    if (client && phone) client.phone = phone;
-    return data.jobId;
-  }
-  const name = String(data.person || "").trim();
-  if (!name) return "";
-  let client = state.clients.find((item) => (item.name || "").trim().toLowerCase() === name.toLowerCase());
-  if (!client) {
-    client = { id: uid(), name, phone, nameDrawing: "" };
-    state.clients.push(client);
-  } else if (phone) client.phone = phone;
-  let job = state.jobs.find((item) => item.clientId === client.id && item.status !== "entregado");
-  if (!job) {
-    job = makeJob(client.id);
-    state.jobs.push(job);
-  }
-  return job.id;
-}
-
-function saveAppt(data) {
-  const named = String(data.person || "").trim();
-  const existing = data.jobId && jobById(data.jobId);
-  const phone = ui.apptPhone || "";
-  if (phoneDigits(phone).length < 10) {
-    ui.apptError = "Para agendar necesita el número telefónico.";
-    ui.clash = false;
-    window.alert("Para agendar necesita el número telefónico.");
-    render();
-    return;
-  }
-  if ((!existing && !named) || !data.date || !data.time) {
-    ui.apptError = "Escribe el nombre de la persona.";
-    ui.clash = false;
-    render();
-    return;
-  }
-  data.phone = phone;
-  const clash = state.appointments.some((item) => item.date === data.date && item.time === data.time);
-  if (clash) {
-    ui.clash = true;
-    ui.apptError = "";
-    render();
-    return;
-  }
-  const jobId = jobForAppointment(data);
-  ui.clash = false;
-  ui.apptError = "";
-  state.appointments.push({
-    id: uid(),
-    jobId,
-    date: data.date,
-    time: data.time,
-    kind: data.kind || "Prueba",
-  });
-  persist();
-  ui.panel = null;
-  ui.apptPhone = "";
-  ui.apptDraft = null;
-  ui.day = data.date;
-  const job = jobById(jobId);
-  ui.jobId = job.id;
-  ui.clientId = job.clientId;
-  ui.view = "agenda";
-  render();
-}
-
-function padOpen(kind, id = "", key = "") {
-  const pad = ui.pad;
-  return Boolean(pad && pad.kind === kind && (pad.id || "") === id && (pad.key || "") === key);
-}
-
-function padAfter(kind, id = "", key = "") {
-  return padOpen(kind, id, key) ? keypadHtml() : "";
-}
-
-function keypadHtml() {
-  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "+"];
-  return `
-    <div class="keypad">
-      <p>${esc(ui.pad.label)}</p>
-      <p class="keypad-value">${esc(ui.pad.value || "0")}</p>
-      <div class="keys">
-        ${keys.map((key) => `<button type="button" data-press="${key}">${key}</button>`).join("")}
-      </div>
-      <div class="row">
-        <button type="button" class="btn ghost" data-press="back">Borrar</button>
-        <button type="button" class="btn" data-press="ok">Listo</button>
-      </div>
-    </div>`;
-}
-
-function openPad(btn) {
-  const kind = btn.dataset.num;
-  const job = jobById(ui.jobId);
-  const client = clientById(ui.clientId);
-  let value = "";
-  let label = "Número";
-  if (kind === "apptPhone") {
-    value = ui.apptPhone || "";
-    label = "Teléfono";
-  }
-  if (kind === "phone" && client) {
-    value = client.phone || "";
-    label = "Teléfono";
-  }
-  if (kind === "presupuesto" && job) {
-    value = String(job.presupuesto || "");
-    label = "Presupuesto";
-  }
-  if (kind === "deposit" && job) {
-    value = String(job.deposit || "");
-    label = "Anticipo";
-  }
-  if (kind === "urgency" && job) {
-    value = String(job.urgencyFee || "");
-    label = "Cargo de urgencia";
-  }
-  if (kind === "price" && job) {
-    const item = job.garments.find((garment) => garment.id === btn.dataset.id);
-    value = item ? String(item.price || "") : "";
-    label = "Precio";
-  }
-  if (kind === "measure" && job) {
-    value = job.measures[btn.dataset.key] || "";
-    label = MEASURES.find(([key]) => key === btn.dataset.key)?.[1] || "Medida";
-  }
-  ui.pad = { kind, id: btn.dataset.id || "", key: btn.dataset.key || "", value, label };
-  render();
-  const keypad = document.querySelector(".keypad");
-  if (keypad) keypad.scrollIntoView({ block: "nearest" });
-}
-
-function writePad(value) {
-  const pad = ui.pad;
-  if (!pad) return;
-  const job = jobById(ui.jobId);
-  const client = clientById(ui.clientId);
-  if (pad.kind === "apptPhone") {
-    ui.apptPhone = value;
-    pad.value = value;
-    return;
-  }
-  if (pad.kind === "phone" && client) client.phone = value;
-  if (pad.kind === "presupuesto" && job) job.presupuesto = value;
-  if (pad.kind === "deposit" && job) job.deposit = value;
-  if (pad.kind === "urgency" && job) job.urgencyFee = value;
-  if (pad.kind === "price" && job) {
-    const item = job.garments.find((garment) => garment.id === pad.id);
-    if (item) item.price = value;
-    job.price = job.garments.reduce((sum, garment) => sum + amount(garment.price), 0);
-  }
-  if (pad.kind === "measure" && job) job.measures[pad.key] = value;
-  pad.value = value;
-  persist();
-}
-
-function pressKey(key) {
-  if (!ui.pad) return;
-  if (key === "ok") {
-    ui.pad = null;
-    render();
-    return;
-  }
-  let value = ui.pad.value || "";
-  if (key === "back") value = value.slice(0, -1);
-  else if (value.length < 18) value += key;
-  writePad(value);
-  render();
 }
 
 function readPhoto(input) {
   const file = input.files && input.files[0];
-  if (!file) return;
+  input.value = "";
+  if (!file || !ui.photoSlot) return;
+  const slot = ui.photoSlot;
   const reader = new FileReader();
   reader.onload = () => {
     const img = new Image();
@@ -1842,14 +2651,20 @@ function readPhoto(input) {
       canvas.height = Math.max(1, Math.round(img.height * scale));
       canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
       const photo = canvas.toDataURL("image/jpeg", 0.72);
-      const job = jobById(ui.jobId);
+      const job = moneyJob();
       if (!job) return;
-      if (input.dataset.photo === "shoe") job.shoePhoto = photo;
-      if (input.dataset.photo === "garment") {
-        const item = job.garments.find((garment) => garment.id === input.dataset.id);
-        if (item) item.photo = photo;
+      if (slot.part === "shoe") job.shoePhoto = photo;
+      if (slot.part === "garment") {
+        let item = (job.garments || []).find((garment) => garment.id === slot.id);
+        if (!item) {
+          item = { id: uid(), kind: "", custom: "", color: "", note: "", price: 0, done: false, photo: "" };
+          job.garments = job.garments || [];
+          job.garments.push(item);
+        }
+        item.photo = photo;
+        ui.pickId = item.id;
       }
-      persist();
+      if (editingIsLive(job)) persist();
       render();
     };
     img.src = reader.result;
@@ -1857,41 +2672,12 @@ function readPhoto(input) {
   reader.readAsDataURL(file);
 }
 
-function clearInk(kind, id) {
-  if (kind === "client") {
-    const client = clientById(ui.clientId);
-    if (client) client.nameDrawing = "";
-  } else {
-    const item = jobById(ui.jobId)?.garments.find((garment) => garment.id === id);
-    if (!item) return;
-    if (kind === "garment-name") item.nameDrawing = "";
-    else item.noteDrawing = "";
-  }
-  persist();
-  render();
-}
-
-function setupInk(canvas) {
-  const kind = canvas.dataset.ink;
-  const id = canvas.dataset.id;
-  const read = () => {
-    if (kind === "client") return clientById(ui.clientId)?.nameDrawing || "";
-    const item = jobById(ui.jobId)?.garments.find((garment) => garment.id === id);
-    if (!item) return "";
-    return kind === "garment-name" ? item.nameDrawing : item.noteDrawing;
-  };
-  const write = (value) => {
-    if (kind === "client") {
-      const client = clientById(ui.clientId);
-      if (client) client.nameDrawing = value;
-      return;
-    }
-    const item = jobById(ui.jobId)?.garments.find((garment) => garment.id === id);
-    if (!item) return;
-    if (kind === "garment-name") item.nameDrawing = value;
-    else item.noteDrawing = value;
-  };
-  paintInk(canvas, read(), write);
+function afterPaint() {
+  document.querySelectorAll("[data-file]").forEach((input) => {
+    input.onchange = () => readPhoto(input);
+  });
+  const canvas = document.querySelector("[data-sheet]");
+  if (canvas) setupPad(canvas, moneyJob());
 }
 
 function setupPad(canvas, job) {
@@ -1903,7 +2689,14 @@ function setupPad(canvas, job) {
   canvas.height = h;
   ctx.fillStyle = "#c3e0e5";
   ctx.fillRect(0, 0, w, h);
-  drawLines(ctx, w, h);
+  ctx.strokeStyle = "#69adc6";
+  ctx.lineWidth = 1;
+  for (let y = 56; y < h; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(36, y);
+    ctx.lineTo(w - 36, y);
+    ctx.stroke();
+  }
   if (job.drawing) {
     const img = new Image();
     img.onload = () => ctx.drawImage(img, 0, 0, w, h);
@@ -1912,10 +2705,7 @@ function setupPad(canvas, job) {
   let drawing = false;
   const point = (event) => {
     const rect = canvas.getBoundingClientRect();
-    return {
-      x: (event.clientX - rect.left) * (w / rect.width),
-      y: (event.clientY - rect.top) * (h / rect.height),
-    };
+    return { x: (event.clientX - rect.left) * (w / rect.width), y: (event.clientY - rect.top) * (h / rect.height) };
   };
   canvas.onpointerdown = (event) => {
     drawing = true;
@@ -1928,7 +2718,7 @@ function setupPad(canvas, job) {
     if (!drawing) return;
     const p = point(event);
     ctx.strokeStyle = "#103f63";
-    ctx.lineWidth = event.pointerType === "pen" ? 2.4 : 3;
+    ctx.lineWidth = event.pointerType === "pen" ? 2.4 : 3.2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.lineTo(p.x, p.y);
@@ -1938,77 +2728,24 @@ function setupPad(canvas, job) {
     if (!drawing) return;
     drawing = false;
     job.drawing = canvas.toDataURL("image/jpeg", 0.72);
-    persist();
+    if (editingIsLive(job)) persist();
   };
   canvas.onpointerup = finish;
   canvas.onpointercancel = finish;
 }
 
-function paintInk(canvas, saved, write) {
-  const ctx = canvas.getContext("2d");
-  const w = 900;
-  const h = 280;
-  canvas.width = w;
-  canvas.height = h;
-  ctx.fillStyle = "#c3e0e5";
-  ctx.fillRect(0, 0, w, h);
-  if (saved) {
-    const img = new Image();
-    img.onload = () => ctx.drawImage(img, 0, 0, w, h);
-    img.src = saved;
-  }
-  let drawing = false;
-  const point = (event) => {
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: (event.clientX - rect.left) * (w / rect.width),
-      y: (event.clientY - rect.top) * (h / rect.height),
-    };
-  };
-  canvas.onpointerdown = (event) => {
-    drawing = true;
-    canvas.setPointerCapture(event.pointerId);
-    const p = point(event);
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-  };
-  canvas.onpointermove = (event) => {
-    if (!drawing) return;
-    const p = point(event);
-    ctx.strokeStyle = "#103f63";
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-  };
-  const finish = () => {
-    if (!drawing) return;
-    drawing = false;
-    write(canvas.toDataURL("image/jpeg", 0.72));
-    persist();
-  };
-  canvas.onpointerup = finish;
-  canvas.onpointercancel = finish;
+function boot() {
+  document.addEventListener("click", onClick);
+  document.addEventListener("input", onField);
+  document.addEventListener("change", onField);
+  document.addEventListener("submit", onSubmit);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && ui.overlay) closeTop();
+  });
+  render();
+  startCloud();
+  registerWorker();
+  setInterval(checkAvisos, 60000);
 }
 
-function drawLines(ctx, w, h) {
-  ctx.strokeStyle = "#69adc6";
-  ctx.lineWidth = 1;
-  for (let y = 56; y < h; y += 40) {
-    ctx.beginPath();
-    ctx.moveTo(36, y);
-    ctx.lineTo(w - 36, y);
-    ctx.stroke();
-  }
-}
-
-document.addEventListener("keydown", (event) => {
-  if (ui.view !== "slides") return;
-  if (event.key === "ArrowRight") actions.next();
-  if (event.key === "ArrowLeft") actions.prev();
-});
-
-render();
-startCloud();
-registerWorker();
-setInterval(checkAvisos, 60000);
+if (typeof document !== "undefined") boot();
