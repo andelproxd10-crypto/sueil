@@ -1,5 +1,19 @@
-const CACHE = "sueil-app-2";
-const FILES = ["./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+const CACHE = "sueil-app-3";
+const FILES = [
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./brand/sueil-logo-blanco.png",
+  "./brand/sueil-logo-navy.png",
+  "./brand/playera.png",
+  "./brand/pantalon.png",
+  "./brand/vestido.png",
+  "./brand/novia.png",
+  "./brand/otro.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
