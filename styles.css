@@ -659,9 +659,11 @@ textarea { min-height: 72px; resize: vertical; }
 .suggest {
   background: var(--plum-soft);
   border-radius: 16px;
-  padding: 12px;
-  margin-bottom: 8px;
+  padding: 14px;
+  margin: 8px 0 12px;
 }
+.suggest p { margin: 0 0 6px; }
+.suggest strong { font-size: 1.35rem; color: var(--navy); }
 .money-line, .stat {
   display: flex;
   justify-content: space-between;
