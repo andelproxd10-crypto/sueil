@@ -117,6 +117,7 @@ const ui = {
   photoSlot: null,
   suggestHide: false,
   syncConfirmed: "",
+  tutorialStep: 0,
   syncDismissed: "",
   syncHideNone: false,
   syncKey: "",
@@ -1328,6 +1329,10 @@ function ajustesHtml() {
     <h1>Ajustes</h1>
     <p class="kicker">Sueil</p>
     ${ui.settingsNote ? `<p class="warn">${esc(ui.settingsNote)}</p>` : ""}
+    <p class="kicker">Ayuda</p>
+    <div class="settings-list">
+      <button class="set-row" type="button" data-action="tutorial">Cómo usar Sueil</button>
+    </div>
     <p class="kicker">Pantalla</p>
     <div class="card">
       <div class="choice">${sizes.map(([id, label]) => `<button type="button" class="kind ${ui.text === id ? "on" : ""}" data-text="${id}">${label}</button>`).join("")}</div>
@@ -1390,10 +1395,81 @@ function overlayHtml() {
     alumna: alumnaFormHtml(),
     "alumna-ficha": alumnaFichaHtml(),
     temario: temarioHtml(),
+    tutorial: tutorialHtml(),
   }[ui.overlay] || "";
   if (!body) return "";
-  const wide = ui.overlay === "medidas" || ui.overlay === "notas" || ui.overlay === "selector";
+  const wide = ui.overlay === "medidas" || ui.overlay === "notas" || ui.overlay === "selector" || ui.overlay === "tutorial";
   return `<div class="backdrop" data-backdrop="1"><section class="sheet ${wide ? "wide" : ""}" role="dialog">${body}</section></div>`;
+}
+
+const TUTORIAL_STEPS = [
+  {
+    title: "Bienvenida",
+    text: "Esto es Sueil, la agenda del taller. Aquí se anotan citas, encargos, clientas y clases. Puedes volver a este tutorial cuando quieras desde Ajustes.",
+  },
+  {
+    title: "Barra de abajo",
+    text: "Hoy · Agenda · Urgencias · IA · Pendientes · Clases · Trazos. Toca cada botón para cambiar de pantalla. IA y Trazos todavía dicen Coming soon.",
+  },
+  {
+    title: "Botón +",
+    text: "El botón redondo de la esquina sirve para crear. Con él abres una cita nueva o un encargo nuevo sin perderte en el menú.",
+  },
+  {
+    title: "Hoy y Agenda",
+    text: "Hoy muestra lo de este día. Agenda ordena primero las urgencias, luego el día, y dentro del día por hora. Toca una cita o un encargo para verlo.",
+  },
+  {
+    title: "Urgencias y Pendientes",
+    text: "Urgencias junta lo que no puede esperar. Pendientes tiene dos partes: lo que falta por hacer, y lo listo que aún no vienen a recoger.",
+  },
+  {
+    title: "Nuevo encargo",
+    text: "Escribe nombre o teléfono: si ya existe la clienta, Sueil pregunta «¿Es…?». Elige prendas con los dibujos, fechas de evento y entrega, fotos con Tomar foto o Galería, y notas en la hoja grande.",
+  },
+  {
+    title: "Clientas y Clases",
+    text: "En Clientas está la lista y el botón Nueva clienta. En Clases están las alumnas, Nueva alumna y el temario del libro.",
+  },
+  {
+    title: "Ajustes",
+    text: "Ahí cambias el tamaño de letra, el brillo, avisos, precios, parámetros y este tutorial. Si algo se ve chico, sube la letra a Grande.",
+  },
+];
+
+function tutorialHtml() {
+  const total = TUTORIAL_STEPS.length;
+  const step = Math.max(0, Math.min(ui.tutorialStep || 0, total - 1));
+  const item = TUTORIAL_STEPS[step];
+  const first = step === 0;
+  const last = step === total - 1;
+  return `
+    ${closeBtn()}
+    <p class="kicker">Tutorial · ${step + 1} de ${total}</p>
+    <h2>${esc(item.title)}</h2>
+    <p class="tutorial-text">${esc(item.text)}</p>
+    <div class="tutorial-dots" aria-hidden="true">${TUTORIAL_STEPS.map((_, i) => `<i class="${i === step ? "on" : ""}"></i>`).join("")}</div>
+    <div class="row tutorial-nav">
+      ${first
+        ? `<button class="btn-ghost" type="button" data-action="tutorial-skip">Saltar</button>`
+        : `<button class="btn-ghost" type="button" data-action="tutorial-prev">Anterior</button>`}
+      ${last
+        ? `<button class="btn" type="button" data-action="tutorial-done">Listo</button>`
+        : `<button class="btn" type="button" data-action="tutorial-next">Siguiente</button>`}
+    </div>`;
+}
+
+function openTutorial(step) {
+  ui.tutorialStep = typeof step === "number" ? step : 0;
+  openOverlay("tutorial", null);
+}
+
+function finishTutorial() {
+  try { localStorage.setItem("sueil-tutorial-visto", "1"); } catch (err) {}
+  ui.overlay = null;
+  ui.backOverlay = null;
+  ui.tutorialStep = 0;
+  render();
 }
 
 function closeBtn() {
@@ -1939,6 +2015,10 @@ function closeTop() {
     ui.pad = null;
     if (ui.overlay !== "recibo") ui.sample = null;
     render();
+    return;
+  }
+  if (ui.overlay === "tutorial") {
+    finishTutorial();
     return;
   }
   ui.overlay = null;
@@ -2509,6 +2589,18 @@ function onAction(action) {
   if (action === "perfiles") return openOverlay("perfiles", null);
   if (action === "cuenta") return openOverlay("cuenta", null);
   if (action === "temario") return openOverlay("temario", null);
+  if (action === "tutorial") return openTutorial(0);
+  if (action === "tutorial-next") {
+    ui.tutorialStep = Math.min((ui.tutorialStep || 0) + 1, TUTORIAL_STEPS.length - 1);
+    render();
+    return;
+  }
+  if (action === "tutorial-prev") {
+    ui.tutorialStep = Math.max((ui.tutorialStep || 0) - 1, 0);
+    render();
+    return;
+  }
+  if (action === "tutorial-done" || action === "tutorial-skip") return finishTutorial();
   if (action === "clienta-nueva") return startClienta();
   if (action === "alumna-nueva") return startAlumna();
   if (action === "crear-clienta-sync") return createFromSync();
@@ -3068,6 +3160,13 @@ function boot() {
   startCloud();
   registerWorker();
   setInterval(checkAvisos, 60000);
+  try {
+    if (localStorage.getItem("sueil-tutorial-visto") !== "1") {
+      setTimeout(() => {
+        if (!ui.overlay) openTutorial(0);
+      }, 700);
+    }
+  } catch (err) {}
 }
 
 if (typeof document !== "undefined") boot();
