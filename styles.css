@@ -42,13 +42,30 @@ img { max-width: 100%; }
 #app { min-height: 100vh; }
 
 .app {
+  position: relative;
+  height: 100dvh;
   min-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(900px 420px at 0% -10%, rgba(195, 224, 229, 0.9), transparent 55%),
     radial-gradient(700px 380px at 100% 0%, rgba(239, 228, 240, 0.85), transparent 50%),
     linear-gradient(180deg, #f7fbfc 0%, #e7f3f6 100%);
   color: var(--ink);
 }
+.scroll-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.chrome {
+  position: contents;
+}
+.hoy-day { margin-bottom: 28px; }
+.hoy-day .date-chip { margin: 0 0 12px; }
 
 .app-menu {
   background:
@@ -512,7 +529,7 @@ textarea { min-height: 72px; resize: vertical; }
 
 .dock {
   position: fixed;
-  z-index: 20;
+  z-index: 40;
   left: 10px;
   right: 10px;
   bottom: 8px;
@@ -566,7 +583,7 @@ textarea { min-height: 72px; resize: vertical; }
 
 .fab {
   position: fixed;
-  z-index: 26;
+  z-index: 42;
   right: 16px;
   bottom: calc(var(--dock) + 8px + env(safe-area-inset-bottom));
   width: 64px;
@@ -583,7 +600,7 @@ textarea { min-height: 72px; resize: vertical; }
 .app-menu .fab { background: var(--mist-2); color: var(--deep); }
 .fab-menu {
   position: fixed;
-  z-index: 25;
+  z-index: 41;
   right: 16px;
   bottom: calc(var(--dock) + 82px + env(safe-area-inset-bottom));
   display: flex;

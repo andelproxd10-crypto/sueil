@@ -76,7 +76,7 @@ const MEASURES = [
 ];
 
 const NAV = [
-  ["hoy", "Hoy", "hoy"],
+  ["hoy", "Hoy+", "hoy"],
   ["agenda", "Agenda", "agenda"],
   ["urgencias", "Urgencias", "bell"],
   ["ia", "IA", "ia"],
@@ -721,15 +721,15 @@ function sortCitas(list) {
   });
 }
 
-function hoyCitas() {
-  const today = addDays(0);
-  return state.appointments.filter((a) => a.date === today).sort((a, b) => String(a.time).localeCompare(String(b.time)));
+function hoyCitas(dayIso) {
+  const day = dayIso || addDays(0);
+  return state.appointments.filter((a) => a.date === day).sort((a, b) => String(a.time).localeCompare(String(b.time)));
 }
 
-function hoyJobs() {
-  const today = addDays(0);
+function hoyJobs(dayIso) {
+  const day = dayIso || addDays(0);
   return state.jobs
-    .filter((job) => job.status !== "entregado" && job.dueDate === today)
+    .filter((job) => job.status !== "entregado" && job.dueDate === day)
     .sort((a, b) => Number(b.urgent) - Number(a.urgent) || String(a.dueTime).localeCompare(String(b.dueTime)));
 }
 
@@ -850,10 +850,14 @@ function render() {
   const bright = ui.brightness === 100 ? "" : `filter:brightness(${ui.brightness / 100})`;
   root.innerHTML = `
     <div class="app ${ui.view === "menu" ? "app-menu" : ""}" style="${bright}">
-      ${ui.view === "menu" ? "" : topbarHtml()}
-      <main class="stage ${flip ? "rise" : ""}">${screenHtml()}</main>
-      ${dockHtml()}
-      ${fabHtml()}
+      <div class="scroll-pane">
+        ${ui.view === "menu" ? "" : topbarHtml()}
+        <main class="stage ${flip ? "rise" : ""}">${screenHtml()}</main>
+      </div>
+      <div class="chrome" aria-hidden="false">
+        ${dockHtml()}
+        ${fabHtml()}
+      </div>
       ${overlayHtml()}
       ${ui.toast ? `<div class="toast">${esc(ui.toast)}</div>` : ""}
       <input id="cam" class="sr" type="file" accept="image/*" capture="environment" data-file="cam">
@@ -951,7 +955,7 @@ function screenHtml() {
   if (ui.view === "agenda") return agendaHtml();
   if (ui.view === "urgencias") return urgenciasHtml();
   if (ui.view === "pendientes") return pendientesHtml();
-  if (ui.view === "clases") return clasesHtml();
+  if (ui.view === "clases") return soonHtml("Clases", "Las clases y el temario vuelven pronto. Por ahora esta pantalla solo avisa.");
   if (ui.view === "clientas") return clientasHtml();
   if (ui.view === "archivos") return archivosHtml();
   if (ui.view === "ajustes") return ajustesHtml();
@@ -978,26 +982,37 @@ function soonHtml(title, text) {
     </section>`;
 }
 
+function hoyDayBlock(dayIso, label) {
+  const citas = hoyCitas(dayIso);
+  const jobs = hoyJobs(dayIso);
+  return `
+    <div class="hoy-day">
+      <p class="date-chip"><i></i> ${esc(label)} · ${esc(shortDate(dayIso))}</p>
+      <div class="hoy-grid">
+        <section>
+          <p class="panel-title">${svg("cal")} Citas</p>
+          ${citas.length ? `<ol class="timeline">${citas.map(citaTimeline).join("")}</ol>` : `<p class="empty">No hay citas.</p>`}
+        </section>
+        <section>
+          <p class="panel-title">${svg("box")} Encargos</p>
+          <div class="cards">${jobs.length ? jobs.map(hoyJobCard).join("") : `<p class="empty">No hay encargos.</p>`}</div>
+        </section>
+      </div>
+    </div>`;
+}
+
 function hoyHtml() {
-  const citas = hoyCitas();
-  const jobs = hoyJobs();
+  const today = addDays(0);
+  const tomorrow = addDays(1);
   return `
     <div class="screen-head">
       <div>
-        <h1>Hoy</h1>
-        <p class="date-chip"><i></i> Hoy · ${esc(shortDate(addDays(0)))}</p>
+        <h1>Hoy y mañana</h1>
+        <p class="lede">Lo de hoy y lo de mañana, juntos.</p>
       </div>
     </div>
-    <div class="hoy-grid">
-      <section>
-        <p class="panel-title">${svg("cal")} Citas de hoy</p>
-        ${citas.length ? `<ol class="timeline">${citas.map(citaTimeline).join("")}</ol>` : `<p class="empty">Hoy no hay citas.</p>`}
-      </section>
-      <section>
-        <p class="panel-title">${svg("box")} Entregas y pendientes</p>
-        <div class="cards">${jobs.length ? jobs.map(hoyJobCard).join("") : `<p class="empty">Hoy no hay entregas.</p>`}</div>
-      </section>
-    </div>`;
+    ${hoyDayBlock(today, "Hoy")}
+    ${hoyDayBlock(tomorrow, "Mañana")}`;
 }
 
 function citaTimeline(appt) {
@@ -1409,7 +1424,7 @@ const TUTORIAL_STEPS = [
   },
   {
     title: "Barra de abajo",
-    text: "Hoy · Agenda · Urgencias · IA · Pendientes · Clases · Trazos. Toca cada botón para cambiar de pantalla. IA y Trazos todavía dicen Coming soon.",
+    text: "Hoy+ · Agenda · Urgencias · IA · Pendientes · Clases · Trazos. Toca cada botón para cambiar de pantalla. IA, Clases y Trazos todavía dicen Coming soon.",
   },
   {
     title: "Botón +",
