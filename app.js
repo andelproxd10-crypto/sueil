@@ -1541,21 +1541,22 @@ function encargoFormHtml() {
   const tipo = sketchTipo(job);
   const desc = sketchDesc(job);
   if (!draft.full) {
+    // Layout literal del sketch-circuito-encargo.png (Nuevo encargo)
     return `
     ${closeBtn()}
     <h2>${existing ? "Encargo" : "Nuevo encargo"}</h2>
-    <div class="sketch-form">
-      <label class="field-client">Cliente
+    <div class="sketch-form sketch-encargo">
+      <label>Cliente
         <span class="field-wrap">
-          <input data-keep="encargo-person" data-bind="draft.person" data-render="1" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Ana Torres">
-          <span class="field-ico" aria-hidden="true">${svg("user")}</span>
+          <input data-keep="encargo-person" data-bind="draft.person" data-render="1" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Buscar clienta">
+          <span class="field-ico" aria-hidden="true">${svg("search")}</span>
         </span>
       </label>
       <datalist id="clientas-list">${(state.clients || []).map((c) => `<option value="${escAttr(c.name || "")}"></option>`).join("")}</datalist>
       <input type="hidden" data-bind="draft.phone" value="${esc(draft.phone || "")}">
       ${syncBannerHtml(lookup, "form")}
       <label>Prenda / descripción
-        <input data-keep="encargo-desc" data-sketch-desc value="${esc(desc)}" placeholder="Traje de coctel">
+        <input data-keep="encargo-desc" data-sketch-desc value="${esc(desc)}" placeholder="Prenda / descripción">
       </label>
       <div class="field-block">
         <p class="field-label">Tipo</p>
@@ -1564,15 +1565,20 @@ function encargoFormHtml() {
           <button type="button" class="kind ${tipo === "nuevo" ? "on" : ""}" data-sketch-tipo="nuevo">nuevo</button>
         </div>
       </div>
-      <label>Fecha entrega
-        <input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}">
-      </label>
+      <div class="grid-2 fecha-hora">
+        <label>Fecha entrega
+          <input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}">
+        </label>
+        <label>Hora
+          <input data-bind="job.dueTime" data-render="1" type="time" value="${esc(job.dueTime || "12:00")}">
+        </label>
+      </div>
       <label>Notas
         <textarea data-keep="jnote" data-bind="job.note" rows="3" placeholder="Notas del encargo...">${esc(job.note || "")}</textarea>
       </label>
       <div class="field-block">
         <p class="field-label">Estado</p>
-        <div class="kinds">
+        <div class="kinds estado-row">
           ${["pendiente", "listo", "urgente"].map((id) => `<button type="button" class="kind ${statusOf(job) === id ? "on" : ""}" data-status="${id}">${id === "pendiente" ? "Pendiente" : id === "listo" ? "Listo" : "Urgente"}</button>`).join("")}
         </div>
       </div>
