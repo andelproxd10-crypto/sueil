@@ -1,5 +1,8 @@
 const KEY = "sueil-v2";
 const SESSION = "sueil-abierta";
+const DEMO_MODE = (() => {
+  try { return new URLSearchParams(location.search).has("demo"); } catch (err) { return false; }
+})();
 const DEMO_NAMES = new Set(["Elena Vargas", "Camila Ruiz", "Sofía Hernández", "Rosa Méndez"]);
 
 const CLOUD_URL = "https://rmqdfrwcnvwntabatzkw.supabase.co";
@@ -245,7 +248,7 @@ function load() {
     console.warn(err);
   }
   const onlyExamples = (data.clients || []).length > 0 && data.clients.every((client) => DEMO_NAMES.has(client.name));
-  if (onlyExamples) return emptyWorkshop(data.access);
+  if (onlyExamples && !DEMO_MODE) return emptyWorkshop(data.access);
   return shapeState(data);
 }
 
@@ -388,7 +391,46 @@ async function cloudEnter(data, create) {
   await openCloudSession();
 }
 
+function seedDemoIfNeeded() {
+  if (!DEMO_MODE) return;
+  if ((state.clients || []).length) return;
+  const c1 = { id: uid(), name: "Elena Vargas", phone: "5511111111", nameDrawing: "" };
+  const c2 = { id: uid(), name: "Camila Ruiz", phone: "5522222222", nameDrawing: "" };
+  const job = normalizeJob({
+    id: uid(),
+    clientId: c1.id,
+    type: "Nuevo",
+    eventDate: addDays(18),
+    eventTime: "18:00",
+    dueDate: addDays(6),
+    dueTime: "12:00",
+    price: 700,
+    deposit: 300,
+    urgencyFee: 40,
+    presupuesto: 850,
+    urgent: true,
+    garments: [{ id: uid(), kind: "V. fiesta", custom: "", color: "#c44b4b", price: 700, done: false }],
+    status: "activo",
+    note: "Prueba de falda",
+  });
+  state.clients = [c1, c2];
+  state.jobs = [job];
+  state.appointments = [
+    { id: uid(), jobId: job.id, date: addDays(0), time: "11:00", kind: "Prueba", note: "Traer zapatos", done: false },
+    { id: uid(), jobId: "", date: addDays(0), time: "16:30", kind: "Medidas", note: "Camila nueva", done: false },
+  ];
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (err) {}
+}
+
 async function startCloud() {
+  if (DEMO_MODE) {
+    sessionStorage.setItem(SESSION, "1");
+    seedDemoIfNeeded();
+    ui.cloud = "";
+    cloudReady = false;
+    render();
+    return;
+  }
   try {
     if (!window.supabase?.createClient) {
       ui.cloud = "";
