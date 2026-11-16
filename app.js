@@ -1544,28 +1544,46 @@ function encargoFormHtml() {
     return `
     ${closeBtn()}
     <h2>${existing ? "Encargo" : "Nuevo encargo"}</h2>
-    <label>Cliente
-      <input data-keep="encargo-person" data-bind="draft.person" data-render="1" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Nombre de la clienta">
-    </label>
-    <datalist id="clientas-list">${(state.clients || []).map((c) => `<option value="${escAttr(c.name || "")}"></option>`).join("")}</datalist>
-    <label>Teléfono<input data-keep="encargo-phone" data-bind="draft.phone" data-render="1" type="tel" value="${esc(draft.phone || "")}" placeholder="Teléfono"></label>
-    ${syncBannerHtml(lookup, "form")}
-    <label>Prenda / descripción<input data-keep="encargo-desc" data-sketch-desc value="${esc(desc)}" placeholder="Ej. Vestido de fiesta"></label>
-    <p class="meta">Tipo</p>
-    <div class="kinds">
-      <button type="button" class="kind ${tipo === "alteracion" ? "on" : ""}" data-sketch-tipo="alteracion">alteración</button>
-      <button type="button" class="kind ${tipo === "nuevo" ? "on" : ""}" data-sketch-tipo="nuevo">nuevo</button>
-    </div>
-    <label>Fecha entrega<input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}"></label>
-    <label>Notas<textarea data-keep="jnote" data-bind="job.note" rows="3" placeholder="Notas del encargo">${esc(job.note || "")}</textarea></label>
-    <p class="meta">Estado</p>
-    <div class="kinds">
-      ${["pendiente", "listo", "urgente"].map((id) => `<button type="button" class="kind ${statusOf(job) === id ? "on" : ""}" data-status="${id}">${id === "pendiente" ? "Pendiente" : id === "listo" ? "Listo" : "Urgente"}</button>`).join("")}
-    </div>
-    ${job.urgent ? `<button class="btn-ghost" type="button" data-num="urgency">Urgencia ${esc(money(amount(job.urgencyFee)))}</button>${padBlock("urgency")}` : ""}
-    ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
-    ${syncSaveNote(lookup)}
-    <div class="row"><button class="btn" type="button" data-action="guardar-encargo" ${blocked ? "disabled" : ""}>Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
+    <div class="sketch-form">
+      <label class="field-client">Cliente
+        <span class="field-wrap">
+          <input data-keep="encargo-person" data-bind="draft.person" data-render="1" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Ana Torres">
+          <span class="field-ico" aria-hidden="true">${svg("user")}</span>
+        </span>
+      </label>
+      <datalist id="clientas-list">${(state.clients || []).map((c) => `<option value="${escAttr(c.name || "")}"></option>`).join("")}</datalist>
+      <input type="hidden" data-bind="draft.phone" value="${esc(draft.phone || "")}">
+      ${syncBannerHtml(lookup, "form")}
+      <label>Prenda / descripción
+        <input data-keep="encargo-desc" data-sketch-desc value="${esc(desc)}" placeholder="Traje de coctel">
+      </label>
+      <div class="field-block">
+        <p class="field-label">Tipo</p>
+        <div class="kinds tipo-row">
+          <button type="button" class="kind ${tipo === "alteracion" ? "on" : ""}" data-sketch-tipo="alteracion">alteración</button>
+          <button type="button" class="kind ${tipo === "nuevo" ? "on" : ""}" data-sketch-tipo="nuevo">nuevo</button>
+        </div>
+      </div>
+      <label>Fecha entrega
+        <input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}">
+      </label>
+      <label>Notas
+        <textarea data-keep="jnote" data-bind="job.note" rows="3" placeholder="Notas del encargo...">${esc(job.note || "")}</textarea>
+      </label>
+      <div class="field-block">
+        <p class="field-label">Estado</p>
+        <div class="kinds">
+          ${["pendiente", "listo", "urgente"].map((id) => `<button type="button" class="kind ${statusOf(job) === id ? "on" : ""}" data-status="${id}">${id === "pendiente" ? "Pendiente" : id === "listo" ? "Listo" : "Urgente"}</button>`).join("")}
+        </div>
+      </div>
+      ${job.urgent ? `<button class="btn-ghost" type="button" data-num="urgency">Urgencia ${esc(money(amount(job.urgencyFee)))}</button>${padBlock("urgency")}` : ""}
+      ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
+      ${syncSaveNote(lookup)}
+      <div class="row sketch-actions">
+        <button class="btn" type="button" data-action="guardar-encargo" ${blocked ? "disabled" : ""}>Guardar</button>
+        <button class="btn-ghost" type="button" data-close="1">Cancelar</button>
+      </div>
+    </div>`;
   }
   const garments = job.garments || [];
   return `
@@ -2212,6 +2230,10 @@ function onField(event) {
     const key = el.dataset.bind.slice(4);
     ui.draft.job[key] = value;
   }
+  if (el.dataset.bind === "draft.person" && ui.draft) {
+    const hit = (state.clients || []).find((c) => fold(c.name) === fold(el.value));
+    if (hit) ui.draft.phone = hit.phone || "";
+  }
   if (["draft.person", "draft.phone", "cita.person", "cita.phone"].includes(el.dataset.bind)) {
     const ctx = syncContext();
     if (ctx) noteSyncTyping(ctx.name, ctx.phone);
@@ -2848,7 +2870,7 @@ function commitEncargo() {
   if (guardSync(name, phone)) return;
   if (!name) { ui.formError = "Escribe el nombre."; render(); return; }
   let client = (ui.syncConfirmed && clientById(ui.syncConfirmed)) || state.clients.find((item) => fold(item.name) === fold(name));
-  if (!client && phoneDigits(phone).length < 10 && !draft.job.clientId) {
+  if (!client && phoneDigits(phone).length < 10 && !draft.job.clientId && draft.full) {
     ui.formError = "Para una clienta nueva hace falta el teléfono.";
     render();
     return;
