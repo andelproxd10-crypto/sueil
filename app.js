@@ -76,7 +76,7 @@ const MEASURES = [
 ];
 
 const NAV = [
-  ["hoy", "Hoy", "hoy"],
+  ["hoy", "Hoy+", "hoy"],
   ["agenda", "Agenda", "agenda"],
   ["urgencias", "Urgencias", "bell"],
   ["ia", "IA", "ia"],
@@ -721,15 +721,15 @@ function sortCitas(list) {
   });
 }
 
-function hoyCitas() {
-  const today = addDays(0);
-  return state.appointments.filter((a) => a.date === today).sort((a, b) => String(a.time).localeCompare(String(b.time)));
+function hoyCitas(dayIso) {
+  const day = dayIso || addDays(0);
+  return state.appointments.filter((a) => a.date === day).sort((a, b) => String(a.time).localeCompare(String(b.time)));
 }
 
-function hoyJobs() {
-  const today = addDays(0);
+function hoyJobs(dayIso) {
+  const day = dayIso || addDays(0);
   return state.jobs
-    .filter((job) => job.status !== "entregado" && job.dueDate === today)
+    .filter((job) => job.status !== "entregado" && job.dueDate === day)
     .sort((a, b) => Number(b.urgent) - Number(a.urgent) || String(a.dueTime).localeCompare(String(b.dueTime)));
 }
 
@@ -799,7 +799,7 @@ function svg(name) {
 function colorHex(name) {
   const n = String(name || "").trim().toLowerCase();
   if (n.startsWith("#") && n.length >= 4) return n;
-  const found = COLORS.find((item) => item[0] === n);
+  const found = COLORS.find((item) => String(item[0]).toLowerCase() === n);
   return found ? found[1] : "#d5e6ec";
 }
 
@@ -850,10 +850,14 @@ function render() {
   const bright = ui.brightness === 100 ? "" : `filter:brightness(${ui.brightness / 100})`;
   root.innerHTML = `
     <div class="app ${ui.view === "menu" ? "app-menu" : ""}" style="${bright}">
-      ${ui.view === "menu" ? "" : topbarHtml()}
-      <main class="stage ${flip ? "rise" : ""}">${screenHtml()}</main>
-      ${dockHtml()}
-      ${fabHtml()}
+      <div class="scroll-pane">
+        ${ui.view === "menu" ? "" : topbarHtml()}
+        <main class="stage ${flip ? "rise" : ""}">${screenHtml()}</main>
+      </div>
+      <div class="chrome" aria-hidden="false">
+        ${dockHtml()}
+        ${fabHtml()}
+      </div>
       ${overlayHtml()}
       ${ui.toast ? `<div class="toast">${esc(ui.toast)}</div>` : ""}
       <input id="cam" class="sr" type="file" accept="image/*" capture="environment" data-file="cam">
@@ -931,12 +935,13 @@ function dockHtml() {
 
 function fabHtml() {
   const items = [
-    ["cita-nueva", "Nueva cita", "cal"],
     ["encargo-nuevo", "Nuevo encargo", "box"],
+    ["encargos", "Ver encargos", "box"],
+    ["cita-nueva", "Nueva cita", "cal"],
     ["clienta-nueva", "Nueva clienta", "user"],
+    ["clientas", "Clientas", "users"],
     ["archivos", "Archivos", "folder"],
     ["ajustes", "Ajustes", "gear"],
-    ["clientas", "Clientas", "users"],
   ];
   return `
     ${ui.fab ? `<div class="fab-menu">
@@ -951,7 +956,7 @@ function screenHtml() {
   if (ui.view === "agenda") return agendaHtml();
   if (ui.view === "urgencias") return urgenciasHtml();
   if (ui.view === "pendientes") return pendientesHtml();
-  if (ui.view === "clases") return clasesHtml();
+  if (ui.view === "clases") return soonHtml("Clases", "Las clases y el temario vuelven pronto. Por ahora esta pantalla solo avisa.");
   if (ui.view === "clientas") return clientasHtml();
   if (ui.view === "archivos") return archivosHtml();
   if (ui.view === "ajustes") return ajustesHtml();
@@ -978,26 +983,37 @@ function soonHtml(title, text) {
     </section>`;
 }
 
+function hoyDayBlock(dayIso, label) {
+  const citas = hoyCitas(dayIso);
+  const jobs = hoyJobs(dayIso);
+  return `
+    <div class="hoy-day">
+      <p class="date-chip"><i></i> ${esc(label)} · ${esc(shortDate(dayIso))}</p>
+      <div class="hoy-grid">
+        <section>
+          <p class="panel-title">${svg("cal")} Citas</p>
+          ${citas.length ? `<ol class="timeline">${citas.map(citaTimeline).join("")}</ol>` : `<p class="empty">No hay citas.</p>`}
+        </section>
+        <section>
+          <p class="panel-title">${svg("box")} Encargos</p>
+          <div class="cards">${jobs.length ? jobs.map(hoyJobCard).join("") : `<p class="empty">No hay encargos.</p>`}</div>
+        </section>
+      </div>
+    </div>`;
+}
+
 function hoyHtml() {
-  const citas = hoyCitas();
-  const jobs = hoyJobs();
+  const today = addDays(0);
+  const tomorrow = addDays(1);
   return `
     <div class="screen-head">
       <div>
-        <h1>Hoy</h1>
-        <p class="date-chip"><i></i> Hoy · ${esc(shortDate(addDays(0)))}</p>
+        <h1>Hoy y mañana</h1>
+        <p class="lede">Lo de hoy y lo de mañana, juntos.</p>
       </div>
     </div>
-    <div class="hoy-grid">
-      <section>
-        <p class="panel-title">${svg("cal")} Citas de hoy</p>
-        ${citas.length ? `<ol class="timeline">${citas.map(citaTimeline).join("")}</ol>` : `<p class="empty">Hoy no hay citas.</p>`}
-      </section>
-      <section>
-        <p class="panel-title">${svg("box")} Entregas y pendientes</p>
-        <div class="cards">${jobs.length ? jobs.map(hoyJobCard).join("") : `<p class="empty">Hoy no hay entregas.</p>`}</div>
-      </section>
-    </div>`;
+    ${hoyDayBlock(today, "Hoy")}
+    ${hoyDayBlock(tomorrow, "Mañana")}`;
 }
 
 function citaTimeline(appt) {
@@ -1409,7 +1425,7 @@ const TUTORIAL_STEPS = [
   },
   {
     title: "Barra de abajo",
-    text: "Hoy · Agenda · Urgencias · IA · Pendientes · Clases · Trazos. Toca cada botón para cambiar de pantalla. IA y Trazos todavía dicen Coming soon.",
+    text: "Hoy+ · Agenda · Urgencias · IA · Pendientes · Clases · Trazos. Toca cada botón para cambiar de pantalla. IA, Clases y Trazos todavía dicen Coming soon.",
   },
   {
     title: "Botón +",
@@ -1541,31 +1557,42 @@ function encargoFormHtml() {
     <p class="meta">Foto del zapato, opcional</p>
     ${photoButtons("shoe")}
     ${job.shoePhoto ? `<img class="shot" alt="Zapato" src="${job.shoePhoto}">` : ""}
-    <p class="kicker">Prenda</p>
-    <div class="g-icons">
-      ${GROUPS.filter((g) => g.id !== "otro").map((g) => `<button type="button" class="g-icon ${g.sketch ? "sketch" : ""}" data-group="${g.id}"><img src="brand/${g.file}" alt=""><span>${esc(g.label)}</span></button>`).join("")}
-      <button type="button" class="g-icon" data-group="otro"><img src="brand/otro.png" alt=""><span>Otro</span></button>
+    <p class="kicker">Prenda y color</p>
+    <div class="prenda-color">
+      <div class="g-icons">
+        ${GROUPS.filter((g) => g.id !== "otro").map((g) => `<button type="button" class="g-icon ${g.sketch ? "sketch" : ""}" data-group="${g.id}"><img src="brand/${g.file}" alt=""><span>${esc(g.label)}</span></button>`).join("")}
+        <button type="button" class="g-icon" data-group="otro"><img src="brand/otro.png" alt=""><span>Otro</span></button>
+      </div>
+      <button class="color-side" type="button" data-action="color" aria-label="Color">
+        <span class="swatch big" style="background:${escAttr(colorHex(((garments.filter((item) => item.kind || item.custom).slice(-1)[0]) || {}).color))}"></span>
+        <span>Color</span>
+      </button>
     </div>
-    <p class="meta">Toca un grupo. Se abre el selector.</p>
+    <p class="meta">Toca un dibujo para la prenda. El color va al lado.</p>
     <div class="cards">
       ${garments.filter((item) => item.kind || item.custom).map((item) => `
         <div class="card row-card">
           <img src="brand/${groupOf(item.kind).file}" alt="" width="48" height="48">
-          <div><div class="who">${esc(garmentLabel(item))}</div>${full ? `<button class="btn-ghost" type="button" data-num="price" data-id="${esc(item.id)}">Precio ${esc(money(amount(item.price)))}</button>` : ""}</div>
+          <div>
+            <div class="who">${esc(garmentLabel(item))}</div>
+            <button class="btn-ghost" type="button" data-pick-color="${esc(item.id)}"><span class="swatch" style="display:inline-block;background:${escAttr(colorHex(item.color))}"></span> ${esc(item.color || "Color")}</button>
+            ${full ? `<button class="btn-ghost" type="button" data-num="price" data-id="${esc(item.id)}">Precio ${esc(money(amount(item.price)))}</button>` : ""}
+          </div>
           <button class="btn-ghost" type="button" data-drop-garment="${esc(item.id)}">Quitar</button>
         </div>`).join("")}
     </div>
     ${padBlock("price")}
+    <button class="btn sky" type="button" data-action="agregar-prenda" style="width:100%;margin:8px 0">+ Agregar prenda</button>
     <p class="meta">Foto de la prenda, opcional</p>
     ${photoButtons("garment", ((garments.filter((item) => item.kind || item.custom).slice(-1)[0]) || {}).id || "")}
     ${(garments.find((item) => item.photo) || {}).photo ? `<img class="shot" alt="Prenda" src="${escAttr((garments.find((item) => item.photo) || {}).photo)}">` : ""}
     <label>Nota<input data-keep="jnote" data-bind="job.note" value="${esc(job.note || "")}" placeholder="Nota del encargo"></label>
-    <div class="row"><button class="btn-ghost" type="button" data-action="notas">Hoja de notas</button><button class="btn-ghost" type="button" data-action="color">Color</button></div>
+    <button class="btn-ghost" type="button" data-action="notas" style="width:100%">Hoja de notas</button>
     <div class="grid-2">
-      <label>Evento<input data-bind="job.eventDate" data-render="1" type="date" value="${esc(job.eventDate || "")}"></label>
+      <label>Hora de entrega<input data-bind="job.dueTime" data-render="1" type="time" value="${esc(job.dueTime || "12:00")}"></label>
       <label>Entrega<input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}"></label>
     </div>
-    <label>Hora de entrega<input data-bind="job.dueTime" data-render="1" type="time" value="${esc(job.dueTime || "12:00")}"></label>
+    <label>Evento<input data-bind="job.eventDate" data-render="1" type="date" value="${esc(job.eventDate || "")}"></label>
     <p class="meta">Estado</p>
     <div class="kinds">
       ${["pendiente", "listo", "urgente"].map((id) => `<button type="button" class="kind ${statusOf(job) === id ? "on" : ""}" data-status="${id}">${id === "pendiente" ? "Pendiente" : id === "listo" ? "Listo" : "Urgente"}</button>`).join("")}
@@ -1607,33 +1634,38 @@ function resumenHtml() {
   const job = jobById(ui.jobId);
   if (!job) return `${closeBtn()}<p class="empty">Ese encargo ya no está.</p>`;
   const client = clientById(job.clientId);
-  const garment = (job.garments || []).find((item) => item.kind || item.photo) || job.garments[0];
+  const garment = (job.garments || []).find((item) => item.kind || item.photo) || (job.garments || [])[0];
   const group = groupOf(garment && garment.kind);
   return `
     ${closeBtn()}
     <p class="kicker">Encargo</p>
     <h2>${esc(client ? client.name : "Clienta")} ${job.picky ? `<span class="badge-cm">CM</span>` : ""}</h2>
-    <p>${esc(garmentSummary(job))} <span class="pill ${esc(statusOf(job))}">${esc(statusLabel(job))}</span></p>
-    <div class="shots">
-      <img src="brand/${group.file}" alt="${esc(group.label)}" width="96" height="96">
-      ${garment && garment.photo ? `<img class="shot" alt="Prenda" src="${garment.photo}">` : ""}
-      ${job.shoePhoto ? `<img class="shot" alt="Zapato" src="${job.shoePhoto}">` : ""}
-    </div>
-    <div class="grid-2">
-      <p><span class="swatch" style="display:inline-block;background:${escAttr(colorHex(garment && garment.color))}"></span> ${esc((garment && garment.color) || "Color")}</p>
+    <div class="resumen-top">
       <div>
+        <p class="meta" style="margin:0 0 6px">Encargo</p>
+        <span class="pill ${esc(statusOf(job))}">${esc(statusLabel(job))}</span>
+      </div>
+      <div class="resumen-media">
+        <button type="button" class="g-hit" data-action="abrir-completo" aria-label="Abrir completo">
+          <img src="brand/${group.file}" alt="${esc(group.label)}" width="88" height="88">
+          <span class="plus-dot">+</span>
+        </button>
+        <button class="color-side compact" type="button" data-pick-color="${esc((garment && garment.id) || "")}">
+          <span class="swatch big" style="background:${escAttr(colorHex(garment && garment.color))}"></span>
+          <span>Color</span>
+        </button>
+      </div>
+      <div class="resumen-dates">
         <div>Evento ${esc(shortDate(job.eventDate))}</div>
         <div>Entrega ${esc(shortDate(job.dueDate))} ${esc(job.dueTime || "")}</div>
       </div>
     </div>
     <p class="who">Total ${esc(money(totalOf(job)))}</p>
-    <div class="row">
+    <div class="row wrap-actions">
       <button class="btn" type="button" data-action="abrir-completo">Abrir completo</button>
       <button class="btn-ghost" type="button" data-action="recibo">Recibo</button>
       <button class="btn-ghost" type="button" data-action="notas">Notas</button>
       <button class="btn-ghost" type="button" data-close="1">Cerrar</button>
-    </div>
-    <div class="row">
       <button class="btn-ghost" type="button" data-action="medidas">Medidas</button>
       <button class="btn plum" type="button" data-action="entregar">${job.status === "entregado" ? "Volver a activar" : "Marcar entregado"}</button>
       ${client ? `<button class="btn-ghost" type="button" data-open-client="${esc(client.id)}">Ficha</button>` : ""}
@@ -1692,14 +1724,23 @@ function reciboHtml() {
 function cromaticoHtml() {
   const job = moneyJob();
   const garment = currentGarment(job);
+  const hex = colorHex(garment && garment.color) || "#103f63";
+  if (!garment) {
+    return `
+      ${closeBtn()}
+      <h2>Color</h2>
+      <p class="warn">Primero agrega una prenda. Luego elige el color.</p>
+      <button class="btn" type="button" data-action="agregar-prenda">Elegir prenda</button>`;
+  }
   return `
     ${closeBtn()}
     <h2>Color</h2>
+    <p class="meta">Para ${esc(garmentLabel(garment))}</p>
     <div class="swatches">
-      ${COLORS.map(([name, hex]) => `<button class="swatch" type="button" data-swatch="${esc(name)}" style="background:${hex}" aria-label="${esc(name)}"></button>`).join("")}
+      ${COLORS.map(([name, hexValue]) => `<button class="swatch ${garment.color === name || garment.color === hexValue ? "on" : ""}" type="button" data-swatch="${esc(name)}" style="background:${hexValue}" aria-label="${esc(name)}"></button>`).join("")}
     </div>
-    <label>Rueda<input type="color" data-hue value="${esc(String(garment && garment.color || "").startsWith("#") ? garment.color : "#103f63")}"></label>
-    <p class="meta">Elegido: ${esc((garment && garment.color) || "ninguno")}</p>
+    <label>Rueda<input type="color" data-hue value="${esc(hex.startsWith("#") ? hex : "#103f63")}"></label>
+    <p class="meta color-chosen">Elegido: ${esc(garment.color || "ninguno")}</p>
     <button class="btn" type="button" data-close="1">Listo</button>`;
 }
 
@@ -2093,11 +2134,8 @@ function onField(event) {
       garment.color = el.value;
       if (editingIsLive(moneyJob())) persist();
     }
-    const label = el.parentElement && el.parentElement.parentElement;
-    if (label) {
-      const note = document.querySelector(".sheet .meta");
-      if (note) note.textContent = "Elegido: " + el.value;
-    }
+    const note = document.querySelector(".sheet .color-chosen");
+    if (note) note.textContent = "Elegido: " + el.value;
     return;
   }
   if (el.dataset.clientField && ui.clientId) {
@@ -2180,6 +2218,21 @@ function onClick(event) {
   if (btn.dataset.confirmClient) { confirmClient(btn.dataset.confirmClient); return; }
   if (btn.dataset.suggestNo != null) { dismissSync(); return; }
   if (btn.dataset.dropGarment) { dropGarment(btn.dataset.dropGarment); return; }
+  if (btn.dataset.pickColor != null) {
+    const id = btn.dataset.pickColor;
+    if (id) ui.pickId = id;
+    const job = moneyJob();
+    const garment = currentGarment(job);
+    if (!garment) {
+      toast("Primero elige una prenda");
+      ui.pickGroup = null;
+      openOverlay("selector", ui.overlay || "encargo");
+      return;
+    }
+    ui.pickId = garment.id;
+    openOverlay("cromatico");
+    return;
+  }
   if (btn.dataset.cam) { shoot(btn.dataset.cam, btn.dataset.id, "cam"); return; }
   if (btn.dataset.gal) { shoot(btn.dataset.gal, btn.dataset.id, "gal"); return; }
   if (btn.dataset.num) { openPad(btn); return; }
@@ -2198,7 +2251,7 @@ function onFab(action) {
   if (action === "cita-nueva") { ui.clientId = null; ui.jobId = null; openCita(null); return; }
   if (action === "encargo-nuevo") { ui.clientId = null; openEncargo(null, false); return; }
   if (action === "clienta-nueva") { startClienta(); return; }
-  if (action === "archivos" || action === "ajustes" || action === "clientas") go(action);
+  if (action === "encargos" || action === "archivos" || action === "ajustes" || action === "clientas") go(action);
 }
 
 function openResumen(id) {
@@ -2562,7 +2615,24 @@ function onAction(action) {
   if (action === "notas") { ui.inkOn = false; openOverlay("notas"); return; }
   if (action === "medidas") { openOverlay("medidas"); return; }
   if (action === "recibo") { ui.sample = null; openOverlay("recibo"); return; }
-  if (action === "color") { openOverlay("cromatico"); return; }
+  if (action === "color") {
+    const job = moneyJob();
+    const garment = currentGarment(job);
+    if (!garment) {
+      toast("Primero elige una prenda");
+      ui.pickGroup = null;
+      openOverlay("selector", ui.overlay === "encargo" ? "encargo" : ui.overlay);
+      return;
+    }
+    ui.pickId = garment.id;
+    openOverlay("cromatico");
+    return;
+  }
+  if (action === "agregar-prenda") {
+    ui.pickGroup = null;
+    openOverlay("selector", ui.overlay === "cromatico" ? (ui.backOverlay || "encargo") : (ui.overlay || "encargo"));
+    return;
+  }
   if (action === "lapiz") { ui.inkOn = !ui.inkOn; render(); return; }
   if (action === "limpiar-lapiz") {
     const job = moneyJob();
