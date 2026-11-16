@@ -1,6 +1,6 @@
-// Sueil IA proxy — Grok (xAI). La clave XAI_API_KEY vive solo en secrets de Supabase.
+// Sueil IA proxy — Grok (xAI). XAI_API_KEY solo en secrets de Supabase.
+// verify_jwt=false: autenticamos aquí (JWT de familia O apikey pública del proyecto).
 // Deploy: supabase functions deploy ia-chat --project-ref rmqdfrwcnvwntabatzkw
-// Secret:  supabase secrets set XAI_API_KEY=... --project-ref rmqdfrwcnvwntabatzkw
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
@@ -56,34 +56,68 @@ function json(status: number, body: Record<string, unknown>) {
   });
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json(405, { error: "Solo POST." });
-
-  const xaiKey = Deno.env.get("XAI_API_KEY");
-  if (!xaiKey) return json(503, { error: "Falta configurar la clave de la IA en el almacén." });
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY") || "";
+function bearerToken(req: Request): string {
   const auth = req.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ") || !supabaseUrl || !supabaseAnon) {
-    return json(401, { error: "Entra con el correo del taller para usar la IA." });
+  if (!auth.toLowerCase().startsWith("bearer ")) return "";
+  return auth.slice(7).trim();
+}
+
+function isProjectKey(value: string, anonJwt: string): boolean {
+  if (!value) return false;
+  if (anonJwt && value === anonJwt) return true;
+  // Nueva clave publishable del cliente (ya es pública en la PWA).
+  if (value.startsWith("sb_publishable_")) return true;
+  return false;
+}
+
+async function authorize(req: Request): Promise<"user" | "anon" | null> {
+  const token = bearerToken(req);
+  const apikey = (req.headers.get("apikey") || "").trim();
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") || "").trim();
+  const anon = (Deno.env.get("SUPABASE_ANON_KEY") || "").trim();
+
+  if (token && supabaseUrl && anon && !isProjectKey(token, anon)) {
+    try {
+      const userClient = createClient(supabaseUrl, anon, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data, error } = await userClient.auth.getUser(token);
+      if (!error && data?.user) return "user";
+    } catch {
+      // sigue a anon
+    }
   }
 
-  const userClient = createClient(supabaseUrl, supabaseAnon, {
-    global: { headers: { Authorization: auth } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: userData, error: userErr } = await userClient.auth.getUser();
-  if (userErr || !userData?.user) {
-    return json(401, { error: "Sesión vencida. Vuelve a entrar con el correo del taller." });
+  // Tras código de familia en la PWA: se permite la apikey/publishable del proyecto.
+  if (isProjectKey(token, anon) || isProjectKey(apikey, anon)) return "anon";
+  return null;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json(405, { error: "Solo POST.", code: "method" });
+
+  const xaiKey = (Deno.env.get("XAI_API_KEY") || "").trim();
+  if (!xaiKey) {
+    return json(503, {
+      error: "Falta configurar la clave de la IA en el almacén.",
+      code: "no_xai_key",
+    });
+  }
+
+  const who = await authorize(req);
+  if (!who) {
+    return json(401, {
+      error: "Entra con el código de la familia o el correo del taller para usar la IA.",
+      code: "auth",
+    });
   }
 
   let payload: { messages?: { role?: string; content?: string }[] };
   try {
     payload = await req.json();
   } catch {
-    return json(400, { error: "Pedido ilegible." });
+    return json(400, { error: "Pedido ilegible.", code: "bad_json" });
   }
 
   const incoming = Array.isArray(payload.messages) ? payload.messages : [];
@@ -96,33 +130,47 @@ Deno.serve(async (req) => {
     }));
 
   if (!cleaned.length || cleaned[cleaned.length - 1].role !== "user") {
-    return json(400, { error: "Escribe un mensaje." });
+    return json(400, { error: "Escribe un mensaje.", code: "empty" });
   }
 
-  const xaiRes = await fetch(XAI_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${xaiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.7,
-      max_tokens: 900,
-      messages: [{ role: "system", content: SYSTEM }, ...cleaned],
-    }),
-  });
+  let xaiRes: Response;
+  try {
+    xaiRes = await fetch(XAI_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${xaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        // Chat corto del taller: poco razonamiento para no tumbar el edge por tiempo.
+        reasoning_effort: "low",
+        temperature: 0.7,
+        max_completion_tokens: 900,
+        messages: [{ role: "system", content: SYSTEM }, ...cleaned],
+      }),
+    });
+  } catch {
+    return json(502, {
+      error: "No hubo red hacia la IA. Intenta otra vez.",
+      code: "xai_network",
+    });
+  }
 
   if (!xaiRes.ok) {
-    // Nunca devolver ni loguear el cuerpo con posibles secretos.
-    return json(502, { error: "La IA no contestó. Intenta otra vez en un momento." });
+    // No reenviar cuerpo de xAI (puede filtrar detalles). Solo código HTTP.
+    return json(502, {
+      error: "La IA no contestó. Intenta otra vez en un momento.",
+      code: "xai_upstream",
+      status: xaiRes.status,
+    });
   }
 
   const data = await xaiRes.json();
   const reply = data?.choices?.[0]?.message?.content;
   if (!reply || typeof reply !== "string") {
-    return json(502, { error: "Respuesta vacía de la IA." });
+    return json(502, { error: "Respuesta vacía de la IA.", code: "xai_empty" });
   }
 
-  return json(200, { reply: reply.trim() });
+  return json(200, { reply: reply.trim(), auth: who });
 });

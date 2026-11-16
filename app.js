@@ -1039,13 +1039,14 @@ function screenHtml() {
 }
 
 function iaHtml() {
+  const familyOk = sessionStorage.getItem(SESSION) === "1";
+  const cloudOn = !!(cloudReady && ui.cloudEmail);
   const bubbles = iaMessages.length
     ? iaMessages.map((msg) => `
         <div class="ia-bubble ${msg.role === "user" ? "me" : "bot"}">
           <p>${esc(msg.content).replace(/\n/g, "<br>")}</p>
         </div>`).join("")
     : `<div class="ia-bubble bot"><p>Hola. Soy la IA de Sueil. Pregunta por encargos, citas, medidas, urgencias, Falda aparte o CM. Habla como quieras; yo ayudo sin sermón.</p></div>`;
-  const needCloud = !cloudReady || ui.iaNeedCloud;
   return `
     <div class="screen-head">
       <div>
@@ -1056,21 +1057,56 @@ function iaHtml() {
     <section class="ia-chat" aria-label="Chat de la IA">
       <div class="ia-log" data-ia-log>${bubbles}</div>
       ${ui.iaError ? `<p class="warn ia-warn">${esc(ui.iaError)}</p>` : ""}
-      ${needCloud && !ui.iaBusy ? `<p class="meta ia-hint">Para contestar de verdad, entra con el correo del taller (Ajustes). La clave de la IA no vive en este aparato.</p>` : ""}
+      ${!familyOk ? `
+        <div class="ia-gate">
+          <p class="meta">Primero entra con el <b>código de la familia</b>.</p>
+        </div>` : ""}
+      ${familyOk && !cloudOn ? `
+        <div class="ia-gate">
+          <p class="meta">Puedes chatear con el código. Si quieres cuenta del almacén: <button class="btn-ghost" type="button" data-action="ia-login" style="display:inline;min-height:auto;padding:4px 8px">abrir Ajustes</button>.</p>
+        </div>` : ""}
       <form class="ia-compose" data-form="ia">
         <label class="ia-label" for="ia-draft">Tu mensaje</label>
-        <textarea id="ia-draft" name="message" data-keep="ia-draft" data-ia-draft rows="3" placeholder="Ej. ¿Falda va aparte del vestido?" ${ui.iaBusy ? "disabled" : ""}>${esc(ui.iaDraft)}</textarea>
+        <textarea id="ia-draft" name="message" data-keep="ia-draft" data-ia-draft rows="3" placeholder="Ej. ¿Falda va aparte del vestido?" ${ui.iaBusy || !familyOk ? "disabled" : ""}>${esc(ui.iaDraft)}</textarea>
         <div class="ia-actions">
-          <button class="btn" type="submit" ${ui.iaBusy ? "disabled" : ""}>${ui.iaBusy ? "Pensando…" : "Enviar"}</button>
+          <button class="btn" type="submit" ${ui.iaBusy || !familyOk ? "disabled" : ""}>${ui.iaBusy ? "Pensando…" : "Enviar"}</button>
           <button class="btn-ghost" type="button" data-action="ia-clear" ${ui.iaBusy || !iaMessages.length ? "disabled" : ""}>Limpiar</button>
         </div>
       </form>
     </section>`;
 }
 
+async function iaAuthHeaders() {
+  // Preferimos JWT de correo; si no hay sesión (InPrivate / solo código), usamos la apikey pública.
+  let token = CLOUD_KEY;
+  let mode = "anon";
+  if (db) {
+    try {
+      const { data: sess } = await db.auth.getSession();
+      if (sess?.session?.access_token) {
+        token = sess.session.access_token;
+        mode = "user";
+      }
+    } catch (err) { /* anon */ }
+  }
+  return {
+    mode,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      apikey: CLOUD_KEY,
+    },
+  };
+}
+
 async function sendIaChat(text) {
   const message = String(text || "").trim();
   if (!message || ui.iaBusy) return;
+  if (sessionStorage.getItem(SESSION) !== "1") {
+    ui.iaError = "Entra con el código de la familia para usar la IA.";
+    render();
+    return;
+  }
   ui.iaDraft = "";
   ui.iaError = "";
   ui.iaNeedCloud = false;
@@ -1078,17 +1114,10 @@ async function sendIaChat(text) {
   ui.iaBusy = true;
   render();
   try {
-    if (!db) throw Object.assign(new Error("cloud"), { code: "cloud" });
-    const { data: sess } = await db.auth.getSession();
-    const token = sess?.session?.access_token;
-    if (!token) throw Object.assign(new Error("cloud"), { code: "cloud" });
+    const auth = await iaAuthHeaders();
     const res = await fetch(IA_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        apikey: CLOUD_KEY,
-      },
+      headers: auth.headers,
       body: JSON.stringify({
         messages: iaMessages.map((m) => ({ role: m.role, content: m.content })),
       }),
@@ -1096,9 +1125,13 @@ async function sendIaChat(text) {
     let body = null;
     try { body = await res.json(); } catch (err) { body = null; }
     if (!res.ok) {
-      if (res.status === 401) {
+      const code = body && body.code;
+      if (res.status === 401 || code === "auth") {
         ui.iaNeedCloud = true;
-        throw new Error((body && body.error) || "Entra con el correo del taller para usar la IA.");
+        throw new Error((body && body.error) || "Entra con el código de la familia o el correo del taller.");
+      }
+      if (code === "no_xai_key") {
+        throw new Error("Falta la clave de la IA en el almacén. Avísale a Andrés.");
       }
       throw new Error((body && body.error) || "No se pudo hablar con la IA.");
     }
@@ -1106,12 +1139,7 @@ async function sendIaChat(text) {
     if (!reply) throw new Error("Respuesta vacía.");
     iaMessages.push({ role: "assistant", content: reply });
   } catch (err) {
-    if (err && err.code === "cloud") {
-      ui.iaNeedCloud = true;
-      ui.iaError = "Entra con el correo del taller en Ajustes para usar la IA.";
-    } else {
-      ui.iaError = (err && err.message) || "Algo falló. Intenta otra vez.";
-    }
+    ui.iaError = (err && err.message) || "Algo falló. Intenta otra vez.";
     if (iaMessages.length && iaMessages[iaMessages.length - 1].role === "user" && iaMessages[iaMessages.length - 1].content === message) {
       iaMessages.pop();
       ui.iaDraft = message;
