@@ -938,6 +938,35 @@ canvas.ink { height: 140px; }
 .resumen-dates { text-align: right; color: var(--muted); font-size: 0.95rem; line-height: 1.35; }
 .wrap-actions { flex-wrap: wrap; }
 
+.sketch-form label,
+.sketch-form .field-block { display: block; margin: 0 0 14px; }
+.sketch-form .field-label,
+.sketch-form label { font-weight: 650; color: var(--navy); margin-bottom: 6px; }
+.sketch-form .field-wrap {
+  position: relative;
+  display: block;
+}
+.sketch-form .field-wrap input { padding-right: 44px; width: 100%; }
+.sketch-form .field-ico {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--mid);
+  pointer-events: none;
+  line-height: 0;
+}
+.sketch-form .tipo-row,
+.sketch-form .estado-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.sketch-form .tipo-row .kind,
+.sketch-form .estado-row .kind { flex: 1; min-width: 96px; }
+.sketch-form .fecha-hora { margin-bottom: 14px; }
+.sketch-form .fecha-hora label { margin: 0; }
+.sketch-actions { margin-top: 8px; }
+.sketch-actions .btn,
+.sketch-actions .btn-ghost { flex: 1; min-height: 52px; }
+.sketch-encargo .kind.on { background: var(--mid); color: #fff; }
+
 .rise { animation: rise 0.18s ease; }
 .sheet { animation: sheetIn 0.16s ease; }
 .fab-menu button { animation: rise 0.14s ease backwards; }
