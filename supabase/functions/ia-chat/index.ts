@@ -1,11 +1,11 @@
 // Sueil IA proxy — Grok (xAI). XAI_API_KEY solo en secrets de Supabase.
-// verify_jwt=false: autenticamos aquí (JWT de familia O apikey pública del proyecto).
+// verify_jwt=false: JWT de usuario O apikey/publishable del proyecto.
 // Deploy: supabase functions deploy ia-chat --project-ref rmqdfrwcnvwntabatzkw
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const XAI_URL = "https://api.x.ai/v1/chat/completions";
-const MODEL = "grok-4.7";
+const MODELS = ["grok-4.7", "grok-4.6", "grok-3"];
 
 const SYSTEM = `Eres la asistente de Sueil, taller familiar de alta costura (Sueños e ilusiones).
 Hablas siempre en español claro, directo y con letra fácil de leer en voz alta.
@@ -31,17 +31,7 @@ Contexto del taller (vocabulario fijo):
 Cómo ayudas:
 - Redactar mensajes a clientas, resumir un encargo, proponer orden del día, recordar vocabulario Sueil, aclarar pasos (cita → encargo → medidas → prueba → entrega).
 - Si piden borrar datos o inventar números, frena y pide confirmación humana.
-- Respuestas cortas primero; alarga solo si te piden detalle.
-
-Ejemplos:
-Usuario: «esta clienta está bien mamona, qué le pongo en la nota»
-Asistente: «Pon CM en la ficha y en la nota algo como: pide cambios a cada rato; confirmar todo por escrito antes de cortar.»
-
-Usuario: «necesito una falda aparte del vestido o va junto»
-Asistente: «Falda es grupo aparte. No la metas en Vestido. Elige Falda corta o Falda larga.»
-
-Usuario: «arma el texto pa' avisar que ya está listo pa' recoger»
-Asistente: «Hola, ya quedó listo tu encargo en Sueil. Puedes pasar a recogerlo cuando gustes. ¡Gracias!»`;
+- Respuestas cortas primero; alarga solo si te piden detalle.`;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -56,6 +46,26 @@ function json(status: number, body: Record<string, unknown>) {
   });
 }
 
+function normalizeKey(raw: string): string {
+  let k = String(raw || "").trim();
+  if (
+    (k.startsWith('"') && k.endsWith('"')) ||
+    (k.startsWith("'") && k.endsWith("'"))
+  ) {
+    k = k.slice(1, -1).trim();
+  }
+  if (/^bearer\s+/i.test(k)) k = k.replace(/^bearer\s+/i, "").trim();
+  return k;
+}
+
+function redact(text: string): string {
+  return String(text || "")
+    .replace(/xai-[A-Za-z0-9_-]+/gi, "[key]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [key]")
+    .replace(/sk-[A-Za-z0-9_-]+/gi, "[key]")
+    .slice(0, 240);
+}
+
 function bearerToken(req: Request): string {
   const auth = req.headers.get("Authorization") || "";
   if (!auth.toLowerCase().startsWith("bearer ")) return "";
@@ -65,7 +75,6 @@ function bearerToken(req: Request): string {
 function isProjectKey(value: string, anonJwt: string): boolean {
   if (!value) return false;
   if (anonJwt && value === anonJwt) return true;
-  // Nueva clave publishable del cliente (ya es pública en la PWA).
   if (value.startsWith("sb_publishable_")) return true;
   return false;
 }
@@ -84,20 +93,57 @@ async function authorize(req: Request): Promise<"user" | "anon" | null> {
       const { data, error } = await userClient.auth.getUser(token);
       if (!error && data?.user) return "user";
     } catch {
-      // sigue a anon
+      // anon
     }
   }
 
-  // Tras código de familia en la PWA: se permite la apikey/publishable del proyecto.
   if (isProjectKey(token, anon) || isProjectKey(apikey, anon)) return "anon";
   return null;
+}
+
+async function readXaiFailure(res: Response): Promise<{ status: number; detail: string; code: string }> {
+  let detail = "";
+  let code = "";
+  try {
+    const j = await res.json();
+    code = String(j.code || j.error?.code || "").slice(0, 80);
+    const raw =
+      (typeof j.error === "string" && j.error) ||
+      (j.error && typeof j.error === "object" && (j.error.message || j.error.error)) ||
+      j.message ||
+      "";
+    detail = redact(String(raw || code || res.statusText || ""));
+  } catch {
+    detail = redact(res.statusText || "");
+  }
+  return { status: res.status, detail, code };
+}
+
+async function callGrok(
+  xaiKey: string,
+  model: string,
+  messages: { role: string; content: string }[],
+  extra: Record<string, unknown> = {},
+) {
+  return await fetch(XAI_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${xaiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      ...extra,
+    }),
+  });
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json(405, { error: "Solo POST.", code: "method" });
 
-  const xaiKey = (Deno.env.get("XAI_API_KEY") || "").trim();
+  const xaiKey = normalizeKey(Deno.env.get("XAI_API_KEY") || "");
   if (!xaiKey) {
     return json(503, {
       error: "Falta configurar la clave de la IA en el almacén.",
@@ -133,44 +179,66 @@ Deno.serve(async (req) => {
     return json(400, { error: "Escribe un mensaje.", code: "empty" });
   }
 
-  let xaiRes: Response;
-  try {
-    xaiRes = await fetch(XAI_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${xaiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        // Chat corto del taller: poco razonamiento para no tumbar el edge por tiempo.
-        reasoning_effort: "low",
-        temperature: 0.7,
-        max_completion_tokens: 900,
-        messages: [{ role: "system", content: SYSTEM }, ...cleaned],
-      }),
-    });
-  } catch {
-    return json(502, {
-      error: "No hubo red hacia la IA. Intenta otra vez.",
-      code: "xai_network",
-    });
+  const messages = [{ role: "system", content: SYSTEM }, ...cleaned];
+  let lastFail = { status: 0, detail: "", code: "" };
+  let usedModel = MODELS[0];
+
+  for (const model of MODELS) {
+    usedModel = model;
+    // 1) Pedido mínimo (evita 400 por params no soportados en la cuenta/modelo).
+    let xaiRes: Response;
+    try {
+      xaiRes = await callGrok(xaiKey, model, messages);
+    } catch {
+      return json(502, {
+        error: "No hubo red hacia la IA. Intenta otra vez.",
+        code: "xai_network",
+      });
+    }
+
+    if (xaiRes.ok) {
+      const data = await xaiRes.json();
+      const reply = data?.choices?.[0]?.message?.content;
+      if (reply && typeof reply === "string") {
+        return json(200, { reply: reply.trim(), auth: who, model });
+      }
+      lastFail = { status: xaiRes.status, detail: "Respuesta vacía", code: "xai_empty" };
+      continue;
+    }
+
+    lastFail = await readXaiFailure(xaiRes);
+
+    // 2) Reintento con effort bajo solo si el mínimo falló por algo distinto a auth.
+    if (lastFail.status === 401 || lastFail.status === 403) break;
+    if (lastFail.status === 400) {
+      try {
+        xaiRes = await callGrok(xaiKey, model, messages, {
+          reasoning_effort: "low",
+          max_completion_tokens: 900,
+        });
+      } catch {
+        continue;
+      }
+      if (xaiRes.ok) {
+        const data = await xaiRes.json();
+        const reply = data?.choices?.[0]?.message?.content;
+        if (reply && typeof reply === "string") {
+          return json(200, { reply: reply.trim(), auth: who, model });
+        }
+      } else {
+        lastFail = await readXaiFailure(xaiRes);
+      }
+    }
   }
 
-  if (!xaiRes.ok) {
-    // No reenviar cuerpo de xAI (puede filtrar detalles). Solo código HTTP.
-    return json(502, {
-      error: "La IA no contestó. Intenta otra vez en un momento.",
-      code: "xai_upstream",
-      status: xaiRes.status,
-    });
-  }
-
-  const data = await xaiRes.json();
-  const reply = data?.choices?.[0]?.message?.content;
-  if (!reply || typeof reply !== "string") {
-    return json(502, { error: "Respuesta vacía de la IA.", code: "xai_empty" });
-  }
-
-  return json(200, { reply: reply.trim(), auth: who });
+  const statusBit = lastFail.status ? `HTTP ${lastFail.status}` : "sin status";
+  const detailBit = lastFail.detail ? `: ${lastFail.detail}` : "";
+  return json(502, {
+    error: `La IA no contestó (${statusBit}${detailBit})`,
+    code: "xai_upstream",
+    status: lastFail.status || undefined,
+    xai: lastFail.detail || undefined,
+    xai_code: lastFail.code || undefined,
+    model: usedModel,
+  });
 });
