@@ -408,7 +408,7 @@ textarea { min-height: 72px; resize: vertical; }
 }
 .icon-btn svg { width: 22px; height: 22px; }
 
-.g-icons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.g-icons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .g-icon, .kind-card {
   border: 1.5px solid var(--line);
   background: #fff;
@@ -643,7 +643,7 @@ textarea { min-height: 72px; resize: vertical; }
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 60;
   background: rgba(12, 36, 52, 0.48);
   display: grid;
   align-items: end;
@@ -1082,7 +1082,7 @@ canvas.ink { height: 140px; }
 .total-pay b { font-size: 1.45rem; }
 
 .rise { animation: rise 0.18s ease; }
-.sheet { animation: sheetIn 0.16s ease; }
+.sheet.sheet-in { animation: sheetIn 0.16s ease; }
 .fab-menu button { animation: rise 0.14s ease backwards; }
 .fab-menu button:nth-child(2) { animation-delay: 0.03s; }
 .fab-menu button:nth-child(3) { animation-delay: 0.06s; }

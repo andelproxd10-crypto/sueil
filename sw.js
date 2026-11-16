@@ -1,4 +1,4 @@
-const CACHE = "sueil-app-11";
+const CACHE = "sueil-app-12";
 const FILES = [
   "./index.html",
   "./styles.css",
@@ -11,6 +11,7 @@ const FILES = [
   "./brand/playera.png",
   "./brand/pantalon.png",
   "./brand/vestido.png",
+  "./brand/falda.png",
   "./brand/novia.png",
   "./brand/otro.png",
 ];

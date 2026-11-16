@@ -11,7 +11,8 @@ const CLOUD_KEY = "sb_publishable_uYdwwxosWdfWWe0mkqNB5w_jeTvt-q_";
 const GROUPS = [
   { id: "playera", label: "Playera", file: "playera.png", kinds: ["Blusa", "Camisa", "Playera"] },
   { id: "pantalon", label: "Pantalón", file: "pantalon.png", kinds: ["Pantalón", "Jean", "Pans", "Pantalón de vestir"] },
-  { id: "vestido", label: "Vestido", file: "vestido.png", kinds: ["V. casual", "V. fiesta", "Falda"] },
+  { id: "vestido", label: "Vestido", file: "vestido.png", kinds: ["V. casual", "V. fiesta"] },
+  { id: "falda", label: "Falda", file: "falda.png", kinds: ["Falda", "Falda corta", "Falda larga"] },
   { id: "novia", label: "Novia / XV", file: "novia.png", kinds: ["Novia", "XV años"], sketch: true },
   { id: "otro", label: "Otro", file: "otro.png", kinds: ["Otro", "Saco", "Crinolina"] },
 ];
@@ -136,6 +137,7 @@ let cloudReady = false;
 let cloudTimer = null;
 let ignoreRemoteUntil = 0;
 let paintKey = "";
+let sheetPaintKey = "";
 let state = load();
 
 function isoFromDate(d) {
@@ -182,11 +184,12 @@ function groupOf(kind) {
   const k = String(kind || "").toLowerCase();
   const exact = GROUPS.find((g) => g.kinds.some((item) => item.toLowerCase() === k));
   if (exact) return exact;
-  if (k.includes("novia") || k.includes("xv")) return GROUPS[3];
-  if (k.includes("vest") || k.includes("falda")) return GROUPS[2];
-  if (k.includes("pantal") || k.includes("jean") || k === "pans") return GROUPS[1];
-  if (k.includes("blusa") || k.includes("camisa") || k.includes("playera")) return GROUPS[0];
-  return GROUPS[4];
+  if (k.includes("novia") || k.includes("xv")) return GROUPS.find((g) => g.id === "novia");
+  if (k.includes("falda")) return GROUPS.find((g) => g.id === "falda");
+  if (k.includes("vest")) return GROUPS.find((g) => g.id === "vestido");
+  if (k.includes("pantal") || k.includes("jean") || k === "pans") return GROUPS.find((g) => g.id === "pantalon");
+  if (k.includes("blusa") || k.includes("camisa") || k.includes("playera")) return GROUPS.find((g) => g.id === "playera");
+  return GROUPS.find((g) => g.id === "otro");
 }
 
 function normalizeJob(job) {
@@ -871,6 +874,27 @@ function restoreFocus(mem) {
   }
 }
 
+function patchSyncSlot() {
+  const slot = document.querySelector("[data-sync-slot]");
+  if (!slot) return;
+  const mode = slot.dataset.syncSlot || "form";
+  let lookup;
+  if (mode === "ficha" && ui.clientId) {
+    const client = clientById(ui.clientId);
+    if (!client) return;
+    lookup = findSync(fichaName(client), fichaPhone(client), client.id);
+  } else {
+    const ctx = syncContext();
+    if (!ctx) return;
+    lookup = findSync(ctx.name, ctx.phone, ctx.exclude || "");
+  }
+  slot.innerHTML = syncBannerHtml(lookup, mode);
+  const note = document.querySelector("[data-sync-note]");
+  if (note) note.innerHTML = syncSaveNote(lookup);
+  const save = document.querySelector("[data-save-clienta]");
+  if (save) save.disabled = syncBlocks(lookup);
+}
+
 function render() {
   applyBody();
   const root = document.getElementById("app");
@@ -1290,9 +1314,9 @@ function fichaPane(client) {
     <article class="card">
       <button class="btn-ghost only-phone" type="button" data-action="clientas-lista" style="margin-bottom:8px">Volver a la lista</button>
       <h2 style="font-family:var(--serif);font-size:40px;margin:0;color:var(--navy)">${esc(fichaName(client) || "Clienta")}</h2>
-      <label>Nombre<input data-keep="ficha-name" data-client-field="name" data-render="1" value="${esc(fichaName(client))}" placeholder="Nombre"></label>
-      <label>Teléfono<input data-keep="ficha-phone" data-client-field="phone" data-render="1" type="tel" value="${esc(fichaPhone(client))}" placeholder="Teléfono"></label>
-      ${syncBannerHtml(findSync(fichaName(client), fichaPhone(client), client.id), "ficha")}
+      <label>Nombre<input data-keep="ficha-name" data-client-field="name" value="${esc(fichaName(client))}" placeholder="Nombre"></label>
+      <label>Teléfono<input data-keep="ficha-phone" data-client-field="phone" type="tel" value="${esc(fichaPhone(client))}" placeholder="Teléfono"></label>
+      <div data-sync-slot="ficha">${syncBannerHtml(findSync(fichaName(client), fichaPhone(client), client.id), "ficha")}</div>
       <div class="row">
         <button class="btn" type="button" data-action="encargo-de-clienta">Nuevo encargo</button>
         <button class="btn" type="button" data-action="cita-de-clienta">Nueva cita</button>
@@ -1457,7 +1481,10 @@ function overlayHtml() {
   }[ui.overlay] || "";
   if (!body) return "";
   const wide = ui.overlay === "medidas" || ui.overlay === "notas" || ui.overlay === "selector" || ui.overlay === "tutorial" || ui.overlay === "encargo";
-  return `<div class="backdrop" data-backdrop="1"><section class="sheet ${wide ? "wide" : ""}" role="dialog">${body}</section></div>`;
+  const sheetSig = `${ui.overlay || ""}|${wide ? 1 : 0}`;
+  const sheetAnim = sheetSig !== sheetPaintKey;
+  sheetPaintKey = sheetSig;
+  return `<div class="backdrop" data-backdrop="1"><section class="sheet ${wide ? "wide" : ""}${sheetAnim ? " sheet-in" : ""}" role="dialog">${body}</section></div>`;
 }
 
 const TUTORIAL_STEPS = [
@@ -1541,9 +1568,9 @@ function citaFormHtml() {
   return `
     ${closeBtn()}
     <h2>${cita.id ? "Editar cita" : "Nueva cita"}</h2>
-    <label>Nombre<input data-keep="cita-person" data-bind="cita.person" data-render="1" value="${esc(cita.person || "")}" placeholder="Nombre"></label>
-    <label>Teléfono<input data-keep="cita-phone" data-bind="cita.phone" data-render="1" type="tel" value="${esc(cita.phone || "")}" placeholder="Se rellena al confirmar..."></label>
-    ${syncBannerHtml(lookup, "form")}
+    <label>Nombre<input data-keep="cita-person" data-bind="cita.person" value="${esc(cita.person || "")}" placeholder="Nombre"></label>
+    <label>Teléfono<input data-keep="cita-phone" data-bind="cita.phone" type="tel" value="${esc(cita.phone || "")}" placeholder="Se rellena al confirmar..."></label>
+    <div data-sync-slot="form">${syncBannerHtml(lookup, "form")}</div>
     <div class="grid-2">
       <label>Fecha<input data-bind="cita.date" data-render="1" type="date" value="${esc(cita.date || ui.day)}"></label>
       <label>Hora<input data-bind="cita.time" data-render="1" type="time" value="${esc(cita.time || "10:00")}"></label>
@@ -1604,12 +1631,12 @@ function encargoFormHtml() {
     ${closeBtn()}
     <p class="kicker">${existing ? "Detalle de encargo" : "Nuevo encargo"}</p>
     <h2 class="detalle-title">
-      <input class="name-inline" data-keep="encargo-person" data-bind="draft.person" data-render="1" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Nombre de la clienta">
+      <input class="name-inline" data-keep="encargo-person" data-bind="draft.person" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Nombre de la clienta">
       <button type="button" class="badge-cm ${job.picky ? "" : "ghost"}" data-action="toggle-cm" title="CM">CM</button>
     </h2>
     <datalist id="clientas-list">${(state.clients || []).map((c) => `<option value="${escAttr(c.name || "")}"></option>`).join("")}</datalist>
     <input type="hidden" data-bind="draft.phone" value="${esc(draft.phone || "")}">
-    ${syncBannerHtml(lookup, "form")}
+    <div data-sync-slot="form">${syncBannerHtml(lookup, "form")}</div>
     <p class="field-label">Prendas</p>
     <div class="prendas-list">
       ${(garments.length ? garments : [{ id: "empty", kind: "", custom: "", color: "", price: 0 }]).map((item) => `
@@ -1625,6 +1652,8 @@ function encargoFormHtml() {
         </div>`).join("")}
       <button class="btn sky add-prenda" type="button" data-action="agregar-prenda">+ Agregar prenda</button>
     </div>
+    ${photoButtons("garment", (garments[0] && garments[0].id) || ui.pickId || "")}
+    ${(garments[0] && garments[0].photo) ? `<img class="shot" src="${escAttr(garments[0].photo)}" alt="Foto prenda">` : ""}
     ${ui.pad && ui.pad.kind === "price" ? padBlock("price") : ""}
     <div class="grid-2 notas-medidas">
       <button class="soft-box" type="button" data-action="notas">
@@ -1930,12 +1959,12 @@ function clientaFormHtml() {
   return `
     ${closeBtn()}
     <h2>Nueva clienta</h2>
-    <label>Nombre<input data-keep="clienta-person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
-    <label>Teléfono<input data-keep="clienta-phone" data-bind="draft.phone" data-render="1" type="tel" value="${esc(draft.phone || "")}"></label>
-    ${syncBannerHtml(lookup, "form")}
+    <label>Nombre<input data-keep="clienta-person" data-bind="draft.person" value="${esc(draft.person || "")}"></label>
+    <label>Teléfono<input data-keep="clienta-phone" data-bind="draft.phone" type="tel" value="${esc(draft.phone || "")}"></label>
+    <div data-sync-slot="form">${syncBannerHtml(lookup, "form")}</div>
     ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
-    ${syncSaveNote(lookup)}
-    <button class="btn" type="button" data-action="guardar-clienta" ${blocked ? "disabled" : ""}>Guardar</button>`;
+    <div data-sync-note>${syncSaveNote(lookup)}</div>
+    <button class="btn" type="button" data-action="guardar-clienta" data-save-clienta ${blocked ? "disabled" : ""}>Guardar</button>`;
 }
 
 function alumnaFormHtml() {
@@ -1955,7 +1984,7 @@ function alumnaFichaHtml() {
   return `
     ${closeBtn()}
     <h2>${esc(student.name || "Alumna")}</h2>
-    <label>Nombre<input data-keep="alumna" data-student-name data-render="1" value="${esc(student.name || "")}" placeholder="Nombre de la alumna"></label>
+    <label>Nombre<input data-keep="alumna" data-student-name value="${esc(student.name || "")}" placeholder="Nombre de la alumna"></label>
     <p class="meta">Toca una clase para cambiar: en curso, hecha, próxima.</p>
     ${TEMARIO.map((title, index) => {
       const mark = student.progress[index] || "";
@@ -2137,6 +2166,7 @@ function closeTop() {
   ui.fab = false;
   ui.inkOn = false;
   ui.syncBuffer = null;
+  sheetPaintKey = "";
   resetSync("");
   render();
 }
@@ -2170,6 +2200,7 @@ function onField(event) {
   if (!el || !el.dataset) return;
   if (el.dataset.q) {
     ui.q[el.dataset.q] = el.value;
+    // Re-filtrar lista sin animación de entrada (paintKey estable).
     render();
     return;
   }
@@ -2245,8 +2276,8 @@ function onField(event) {
         ui.syncBuffer = null;
         persist();
       }
+      patchSyncSlot();
     }
-    if (el.dataset.render === "1") render();
     return;
   }
   if (el.dataset.studentName != null) {
@@ -2255,7 +2286,6 @@ function onField(event) {
       student.name = el.value;
       persist();
     }
-    if (el.dataset.render === "1") render();
     return;
   }
   if (!el.dataset.bind) return;
@@ -2275,12 +2305,14 @@ function onField(event) {
   if (["draft.person", "draft.phone", "cita.person", "cita.phone"].includes(el.dataset.bind)) {
     const ctx = syncContext();
     if (ctx) noteSyncTyping(ctx.name, ctx.phone);
+    patchSyncSlot();
   }
   if (el.dataset.bind === "draft.custom" && ui.draft && ui.draft.job && ui.pickId) {
     const item = ui.draft.job.garments.find((garment) => garment.id === ui.pickId);
     if (item && item.kind === "Otro") item.custom = el.value;
   }
-  if (el.dataset.render === "1" || el.type === "checkbox" || el.type === "date" || el.type === "time") render();
+  // Solo re-montar para checkbox/fecha/hora o campos que lo piden; nunca en texto libre.
+  if (el.type === "checkbox" || el.type === "date" || el.type === "time" || el.dataset.render === "1") render();
 }
 
 function onClick(event) {
@@ -2582,6 +2614,10 @@ function openPad(btn) {
   if (kind === "measure" && job) {
     value = (job.measures && job.measures[btn.dataset.key]) || "";
     label = (MEASURES.find(([key]) => key === btn.dataset.key) || [, "Medida"])[1];
+    // id vacío: padOpen("measure","",key) debe coincidir (pickId de prenda rompía el teclado)
+    ui.pad = { kind, id: "", key: btn.dataset.key || "", value, label };
+    render();
+    return;
   }
   ui.pad = { kind, id: btn.dataset.id || ui.pickId || "", key: btn.dataset.key || "", value, label };
   render();
@@ -2614,6 +2650,29 @@ function writePad(value) {
   if (editingIsLive(job) || pad.kind === "urgencyPrice") persist();
 }
 
+function refreshPadUi() {
+  const pad = ui.pad;
+  if (!pad) return;
+  const valueEl = document.querySelector(".keypad-value");
+  if (valueEl) valueEl.textContent = pad.value || "0";
+  if (pad.kind === "measure" && pad.key) {
+    const b = document.querySelector(`button[data-num="measure"][data-key="${pad.key}"] b`);
+    if (b) b.textContent = pad.value || "—";
+  }
+  const moneyKinds = { presupuesto: "presupuesto", deposit: "deposit", urgency: "urgency", price: "price" };
+  if (moneyKinds[pad.kind]) {
+    const sel = pad.kind === "price" && pad.id
+      ? `button[data-num="price"][data-id="${pad.id}"]`
+      : `button[data-num="${pad.kind}"] b, button[data-num="${pad.kind}"]`;
+    const el = document.querySelector(sel);
+    if (el) {
+      const target = el.tagName === "B" ? el : el.querySelector("b") || el;
+      if (target.tagName === "B") target.textContent = money(amount(pad.value));
+      else if (pad.kind === "price") target.textContent = money(amount(pad.value));
+    }
+  }
+}
+
 function pressKey(key) {
   if (!ui.pad) return;
   if (key === "ok") { ui.pad = null; render(); return; }
@@ -2621,7 +2680,9 @@ function pressKey(key) {
   if (key === "back") value = value.slice(0, -1);
   else if (value.length < 18) value += key;
   writePad(value);
-  render();
+  // No re-montar toda la app en cada dígito (rompía teclado y animaba el sheet).
+  if (document.querySelector(".keypad")) refreshPadUi();
+  else render();
 }
 
 function paintColor(name) {
