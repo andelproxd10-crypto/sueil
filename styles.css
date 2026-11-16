@@ -12,7 +12,9 @@
   --rose: #8f3d4e;
   --paper: #f4fafb;
   --card: #ffffff;
-  --line: rgba(105, 173, 198, 0.55);
+  --line: rgba(105, 173, 198, 0.72);
+  --line-strong: rgba(23, 88, 115, 0.55);
+  --rule: 2.5px;
   --shadow: 0 10px 28px rgba(16, 63, 99, 0.08);
   --serif: "Cormorant Garamond", Georgia, serif;
   --sans: Outfit, "Segoe UI", sans-serif;
@@ -64,7 +66,12 @@ img { max-width: 100%; }
 .chrome {
   position: contents;
 }
-.hoy-day { margin-bottom: 28px; }
+.hoy-day {
+  margin-bottom: 28px;
+  padding-bottom: 18px;
+  border-bottom: var(--rule) solid var(--line-strong);
+}
+.hoy-day:last-child { border-bottom: 0; padding-bottom: 0; }
 .hoy-day .date-chip { margin: 0 0 12px; }
 
 .app-menu {
@@ -141,6 +148,8 @@ h1 {
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: var(--rule) solid var(--line-strong);
 }
 
 .date-chip {
@@ -173,7 +182,9 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 10px;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: var(--rule) solid var(--line-strong);
   color: var(--navy);
   font-weight: 650;
   font-size: 1.15rem;
@@ -234,10 +245,10 @@ input[type="range"] { width: 100%; accent-color: var(--mid); height: 36px; }
 .rail::before {
   content: "";
   position: absolute;
-  left: 6px;
+  left: 5px;
   top: 0;
   bottom: -12px;
-  width: 3px;
+  width: 5px;
   background: var(--sky);
   border-radius: 99px;
 }
@@ -775,7 +786,7 @@ textarea { min-height: 72px; resize: vertical; }
   align-items: center;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--rule) solid var(--line-strong);
   min-height: 56px;
   text-align: left;
   font-size: 1.05rem;
@@ -966,10 +977,18 @@ canvas.ink { height: 140px; }
   outline: none;
 }
 .field-label {
-  margin: 14px 0 8px;
+  margin: 16px 0 8px;
+  padding-top: 10px;
+  border-top: var(--rule) solid var(--line-strong);
   font-weight: 700;
   color: var(--muted);
   letter-spacing: 0.02em;
+}
+.field-label:first-of-type { border-top: 0; padding-top: 0; }
+.fechas-box, .notas-medidas, .money-grid, .toggles {
+  border-top: var(--rule) solid var(--line-strong);
+  padding-top: 12px;
+  margin-top: 14px;
 }
 .prendas-list { display: grid; gap: 8px; margin-bottom: 8px; }
 .prenda-row {
