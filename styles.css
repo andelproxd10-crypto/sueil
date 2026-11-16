@@ -622,6 +622,14 @@ textarea { min-height: 72px; resize: vertical; }
 }
 .ia-warn { margin: 0; font-size: 1.1rem; }
 .ia-hint { margin: 0; font-size: 1.05rem; }
+.ia-gate {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--plum-soft);
+  border: var(--rule) solid rgba(110, 74, 108, 0.35);
+}
+.ia-gate .meta { margin: 0; font-size: 1.08rem; }
+
 
 .dock {
   position: fixed;
