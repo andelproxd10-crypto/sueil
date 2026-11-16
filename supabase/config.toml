@@ -1,0 +1,5 @@
+# Proyecto Sueil (sueil-cloud): rmqdfrwcnvwntabatzkw
+# La PWA llama a /functions/v1/ia-chat; la clave XAI_API_KEY no va al cliente.
+
+[functions.ia-chat]
+verify_jwt = true
