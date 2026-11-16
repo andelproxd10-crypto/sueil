@@ -3302,10 +3302,25 @@ function boot() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && ui.overlay) closeTop();
   });
+  let demo = false;
+  try {
+    demo = new URLSearchParams(location.search).get("demo") === "1";
+  } catch (err) {}
+  if (demo) {
+    ui.cloud = "";
+    try {
+      sessionStorage.setItem(SESSION, "1");
+      localStorage.setItem("sueil-tutorial-visto", "1");
+    } catch (err) {}
+  }
   render();
-  startCloud();
+  if (!demo) startCloud();
   registerWorker();
   setInterval(checkAvisos, 60000);
+  if (demo) {
+    setTimeout(() => openEncargo(null, false), 200);
+    return;
+  }
   try {
     if (localStorage.getItem("sueil-tutorial-visto") !== "1") {
       setTimeout(() => {
