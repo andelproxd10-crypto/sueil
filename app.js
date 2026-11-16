@@ -1126,14 +1126,22 @@ async function sendIaChat(text) {
     try { body = await res.json(); } catch (err) { body = null; }
     if (!res.ok) {
       const code = body && body.code;
+      const status = (body && body.status) || res.status;
+      const xai = body && body.xai;
+      const detail = [
+        (body && body.error) || "",
+        status ? `[${status}]` : "",
+        xai ? `— ${xai}` : "",
+        (body && body.model) ? `(${body.model})` : "",
+      ].filter(Boolean).join(" ");
       if (res.status === 401 || code === "auth") {
         ui.iaNeedCloud = true;
-        throw new Error((body && body.error) || "Entra con el código de la familia o el correo del taller.");
+        throw new Error(detail || "Entra con el código de la familia o el correo del taller.");
       }
       if (code === "no_xai_key") {
-        throw new Error("Falta la clave de la IA en el almacén. Avísale a Andrés.");
+        throw new Error(detail || "Falta la clave de la IA en el almacén. Avísale a Andrés.");
       }
-      throw new Error((body && body.error) || "No se pudo hablar con la IA.");
+      throw new Error(detail || "No se pudo hablar con la IA.");
     }
     const reply = String(body?.reply || "").trim();
     if (!reply) throw new Error("Respuesta vacía.");

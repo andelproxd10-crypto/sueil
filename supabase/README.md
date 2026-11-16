@@ -16,3 +16,7 @@ supabase functions deploy ia-chat --project-ref rmqdfrwcnvwntabatzkw
 ```
 
 Tras cambiar `index.ts` o `config.toml`, hay que **volver a desplegar** la función.
+
+## Nota APH-70
+
+Si la UI dice `La IA no contestó (HTTP 400: …)`, el proxy ya llegó a xAI: revisa el detalle (modelo / key / params) y vuelve a desplegar `ia-chat`.

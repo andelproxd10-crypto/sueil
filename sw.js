@@ -1,4 +1,4 @@
-const CACHE = "sueil-app-15";
+const CACHE = "sueil-app-16";
 const FILES = [
   "./index.html",
   "./styles.css",
