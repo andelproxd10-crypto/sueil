@@ -7,6 +7,7 @@ const DEMO_NAMES = new Set(["Elena Vargas", "Camila Ruiz", "Sofía Hernández", 
 
 const CLOUD_URL = "https://rmqdfrwcnvwntabatzkw.supabase.co";
 const CLOUD_KEY = "sb_publishable_uYdwwxosWdfWWe0mkqNB5w_jeTvt-q_";
+const IA_URL = `${CLOUD_URL}/functions/v1/ia-chat`;
 
 const GROUPS = [
   { id: "playera", label: "Playera", file: "playera.png", kinds: ["Blusa", "Camisa", "Playera"] },
@@ -118,6 +119,10 @@ const ui = {
   toast: "",
   inkOn: false,
   pickId: "",
+  iaDraft: "",
+  iaBusy: false,
+  iaError: "",
+  iaNeedCloud: false,
   photoSlot: null,
   suggestHide: false,
   syncConfirmed: "",
@@ -137,6 +142,7 @@ let cloudReady = false;
 let cloudTimer = null;
 let ignoreRemoteUntil = 0;
 let paintKey = "";
+let iaMessages = [];
 let sheetPaintKey = "";
 let state = load();
 
@@ -910,7 +916,7 @@ function render() {
     restoreFocus(mem);
     return;
   }
-  const sig = `${ui.view}|${ui.overlay || ""}|${ui.fab ? 1 : 0}`;
+  const sig = `${ui.view}|${ui.overlay || ""}|${ui.fab ? 1 : 0}|ia:${ui.iaBusy ? 1 : 0}:${iaMessages.length}`;
   const flip = sig !== paintKey;
   paintKey = sig;
   const bright = ui.brightness === 100 ? "" : `filter:brightness(${ui.brightness / 100})`;
@@ -991,7 +997,7 @@ function dockHtml() {
     ${NAV.map(([id, label, icon]) => {
       const on = ui.view === id;
       if (id === "ia") {
-        return `<button type="button" class="dock-btn ia ${on ? "on" : ""}" data-go="ia" aria-current="${on ? "page" : "false"}">IA<small>Pronto</small></button>`;
+        return `<button type="button" class="dock-btn ia ${on ? "on" : ""}" data-go="ia" aria-current="${on ? "page" : "false"}" aria-label="IA">IA</button>`;
       }
       const badge = id === "pendientes" && pending ? `<em class="dotn">${pending > 9 ? "9+" : pending}</em>` : "";
       return `<button type="button" class="dock-btn ${on ? "on" : ""}" data-go="${id}" aria-current="${on ? "page" : "false"}">${svg(icon)}<span>${label}</span>${badge}</button>`;
@@ -1027,9 +1033,92 @@ function screenHtml() {
   if (ui.view === "archivos") return archivosHtml();
   if (ui.view === "ajustes") return ajustesHtml();
   if (ui.view === "encargos") return encargosHtml();
-  if (ui.view === "ia") return soonHtml("IA", "El botón ya está en el centro. Esta parte llega después, con cuidado de los datos del taller.");
+  if (ui.view === "ia") return iaHtml();
   if (ui.view === "trazos") return soonHtml("Trazos", "Se abre cuando estén los materiales del plano. Por ahora el botón solo avisa.");
   return hoyHtml();
+}
+
+function iaHtml() {
+  const bubbles = iaMessages.length
+    ? iaMessages.map((msg) => `
+        <div class="ia-bubble ${msg.role === "user" ? "me" : "bot"}">
+          <p>${esc(msg.content).replace(/\n/g, "<br>")}</p>
+        </div>`).join("")
+    : `<div class="ia-bubble bot"><p>Hola. Soy la IA de Sueil. Pregunta por encargos, citas, medidas, urgencias, Falda aparte o CM. Habla como quieras; yo ayudo sin sermón.</p></div>`;
+  const needCloud = !cloudReady || ui.iaNeedCloud;
+  return `
+    <div class="screen-head">
+      <div>
+        <h1>IA</h1>
+        <p class="lede">Asistente del taller · letra grande · sin voz todavía</p>
+      </div>
+    </div>
+    <section class="ia-chat" aria-label="Chat de la IA">
+      <div class="ia-log" data-ia-log>${bubbles}</div>
+      ${ui.iaError ? `<p class="warn ia-warn">${esc(ui.iaError)}</p>` : ""}
+      ${needCloud && !ui.iaBusy ? `<p class="meta ia-hint">Para contestar de verdad, entra con el correo del taller (Ajustes). La clave de la IA no vive en este aparato.</p>` : ""}
+      <form class="ia-compose" data-form="ia">
+        <label class="ia-label" for="ia-draft">Tu mensaje</label>
+        <textarea id="ia-draft" name="message" data-keep="ia-draft" data-ia-draft rows="3" placeholder="Ej. ¿Falda va aparte del vestido?" ${ui.iaBusy ? "disabled" : ""}>${esc(ui.iaDraft)}</textarea>
+        <div class="ia-actions">
+          <button class="btn" type="submit" ${ui.iaBusy ? "disabled" : ""}>${ui.iaBusy ? "Pensando…" : "Enviar"}</button>
+          <button class="btn-ghost" type="button" data-action="ia-clear" ${ui.iaBusy || !iaMessages.length ? "disabled" : ""}>Limpiar</button>
+        </div>
+      </form>
+    </section>`;
+}
+
+async function sendIaChat(text) {
+  const message = String(text || "").trim();
+  if (!message || ui.iaBusy) return;
+  ui.iaDraft = "";
+  ui.iaError = "";
+  ui.iaNeedCloud = false;
+  iaMessages.push({ role: "user", content: message });
+  ui.iaBusy = true;
+  render();
+  try {
+    if (!db) throw Object.assign(new Error("cloud"), { code: "cloud" });
+    const { data: sess } = await db.auth.getSession();
+    const token = sess?.session?.access_token;
+    if (!token) throw Object.assign(new Error("cloud"), { code: "cloud" });
+    const res = await fetch(IA_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        apikey: CLOUD_KEY,
+      },
+      body: JSON.stringify({
+        messages: iaMessages.map((m) => ({ role: m.role, content: m.content })),
+      }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch (err) { body = null; }
+    if (!res.ok) {
+      if (res.status === 401) {
+        ui.iaNeedCloud = true;
+        throw new Error((body && body.error) || "Entra con el correo del taller para usar la IA.");
+      }
+      throw new Error((body && body.error) || "No se pudo hablar con la IA.");
+    }
+    const reply = String(body?.reply || "").trim();
+    if (!reply) throw new Error("Respuesta vacía.");
+    iaMessages.push({ role: "assistant", content: reply });
+  } catch (err) {
+    if (err && err.code === "cloud") {
+      ui.iaNeedCloud = true;
+      ui.iaError = "Entra con el correo del taller en Ajustes para usar la IA.";
+    } else {
+      ui.iaError = (err && err.message) || "Algo falló. Intenta otra vez.";
+    }
+    if (iaMessages.length && iaMessages[iaMessages.length - 1].role === "user" && iaMessages[iaMessages.length - 1].content === message) {
+      iaMessages.pop();
+      ui.iaDraft = message;
+    }
+  }
+  ui.iaBusy = false;
+  render();
 }
 
 function menuHtml() {
@@ -1494,7 +1583,7 @@ const TUTORIAL_STEPS = [
   },
   {
     title: "Barra de abajo",
-    text: "Hoy+ · Agenda · Urgencias · IA · Pendientes · Clases · Trazos. Toca cada botón para cambiar de pantalla. IA, Clases y Trazos todavía dicen Coming soon.",
+    text: "Hoy+ · Agenda · Urgencias · IA · Pendientes · Clases · Trazos. Toca cada botón para cambiar de pantalla. IA abre el chat del taller (con correo del almacén). Clases y Trazos todavía dicen Coming soon.",
   },
   {
     title: "Botón +",
@@ -2204,6 +2293,10 @@ function onField(event) {
     render();
     return;
   }
+  if (el.dataset.iaDraft != null) {
+    ui.iaDraft = el.value;
+    return;
+  }
   if (el.dataset.bright != null) {
     ui.brightness = Number(el.value) || 100;
     localStorage.setItem("sueil-brillo", String(ui.brightness));
@@ -2841,6 +2934,13 @@ function onAction(action) {
   if (action === "perfiles") return openOverlay("perfiles", null);
   if (action === "cuenta") return openOverlay("cuenta", null);
   if (action === "temario") return openOverlay("temario", null);
+  if (action === "ia-clear") {
+    iaMessages = [];
+    ui.iaError = "";
+    ui.iaDraft = "";
+    render();
+    return;
+  }
   if (action === "tutorial") return openTutorial(0);
   if (action === "tutorial-next") {
     ui.tutorialStep = Math.min((ui.tutorialStep || 0) + 1, TUTORIAL_STEPS.length - 1);
@@ -3101,6 +3201,7 @@ function onSubmit(event) {
   if (form.dataset.form === "perfil") saveProfile(data);
   if (form.dataset.form === "correo") changeEmail(data);
   if (form.dataset.form === "clave") changePassword(data);
+  if (form.dataset.form === "ia") sendIaChat(data.message || ui.iaDraft);
 }
 
 function enterCode(data) {
@@ -3345,6 +3446,8 @@ function afterPaint() {
   });
   const canvas = document.querySelector("[data-sheet]");
   if (canvas) setupPad(canvas, moneyJob());
+  const log = document.querySelector("[data-ia-log]");
+  if (log) log.scrollTop = log.scrollHeight;
 }
 
 function setupPad(canvas, job) {
