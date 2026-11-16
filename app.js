@@ -1,5 +1,8 @@
 const KEY = "sueil-v2";
 const SESSION = "sueil-abierta";
+const DEMO_MODE = (() => {
+  try { return new URLSearchParams(location.search).has("demo"); } catch (err) { return false; }
+})();
 const DEMO_NAMES = new Set(["Elena Vargas", "Camila Ruiz", "Sofía Hernández", "Rosa Méndez"]);
 
 const CLOUD_URL = "https://rmqdfrwcnvwntabatzkw.supabase.co";
@@ -245,7 +248,7 @@ function load() {
     console.warn(err);
   }
   const onlyExamples = (data.clients || []).length > 0 && data.clients.every((client) => DEMO_NAMES.has(client.name));
-  if (onlyExamples) return emptyWorkshop(data.access);
+  if (onlyExamples && !DEMO_MODE) return emptyWorkshop(data.access);
   return shapeState(data);
 }
 
@@ -388,7 +391,46 @@ async function cloudEnter(data, create) {
   await openCloudSession();
 }
 
+function seedDemoIfNeeded() {
+  if (!DEMO_MODE) return;
+  if ((state.clients || []).length) return;
+  const c1 = { id: uid(), name: "Elena Vargas", phone: "5511111111", nameDrawing: "" };
+  const c2 = { id: uid(), name: "Camila Ruiz", phone: "5522222222", nameDrawing: "" };
+  const job = normalizeJob({
+    id: uid(),
+    clientId: c1.id,
+    type: "Nuevo",
+    eventDate: addDays(18),
+    eventTime: "18:00",
+    dueDate: addDays(6),
+    dueTime: "12:00",
+    price: 700,
+    deposit: 300,
+    urgencyFee: 40,
+    presupuesto: 850,
+    urgent: true,
+    garments: [{ id: uid(), kind: "V. fiesta", custom: "", color: "#c44b4b", price: 700, done: false }],
+    status: "activo",
+    note: "Prueba de falda",
+  });
+  state.clients = [c1, c2];
+  state.jobs = [job];
+  state.appointments = [
+    { id: uid(), jobId: job.id, date: addDays(0), time: "11:00", kind: "Prueba", note: "Traer zapatos", done: false },
+    { id: uid(), jobId: "", date: addDays(0), time: "16:30", kind: "Medidas", note: "Camila nueva", done: false },
+  ];
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (err) {}
+}
+
 async function startCloud() {
+  if (DEMO_MODE) {
+    sessionStorage.setItem(SESSION, "1");
+    seedDemoIfNeeded();
+    ui.cloud = "";
+    cloudReady = false;
+    render();
+    return;
+  }
   try {
     if (!window.supabase?.createClient) {
       ui.cloud = "";
@@ -1414,7 +1456,7 @@ function overlayHtml() {
     tutorial: tutorialHtml(),
   }[ui.overlay] || "";
   if (!body) return "";
-  const wide = ui.overlay === "medidas" || ui.overlay === "notas" || ui.overlay === "selector" || ui.overlay === "tutorial";
+  const wide = ui.overlay === "medidas" || ui.overlay === "notas" || ui.overlay === "selector" || ui.overlay === "tutorial" || ui.overlay === "encargo";
   return `<div class="backdrop" data-backdrop="1"><section class="sheet ${wide ? "wide" : ""}" role="dialog">${body}</section></div>`;
 }
 
@@ -1515,8 +1557,23 @@ function citaFormHtml() {
 }
 
 function citaDetalleHtml() {
-  // Ya no se usa: openAppt abre el detalle de encargo.
-  return resumenHtml();
+  const appt = state.appointments.find((item) => item.id === ui.apptId);
+  if (!appt) return `${closeBtn()}<p class="empty">Esa cita ya no está.</p>`;
+  const job = jobById(appt.jobId);
+  const client = job ? clientById(job.clientId) : null;
+  return `
+    ${closeBtn()}
+    <p class="kicker">Resumen</p>
+    <h2>${esc(client ? client.name : (appt.person || "Cita"))}</h2>
+    <p class="lede">${esc(longDate(appt.date))} · ${esc(appt.time || "")}</p>
+    <span class="pill on">${esc((appt.kind || "cita").toLowerCase())}</span>
+    <p class="meta" style="margin-top:12px">${esc(appt.note || "Sin notas")}</p>
+    ${job ? `<button class="card" type="button" data-open-job="${esc(job.id)}" style="width:100%;margin-top:12px;text-align:left"><div class="who">Ver encargo</div><div class="sub">${esc(garmentSummary(job))}</div></button>` : `<button class="btn" type="button" data-action="encargo-nuevo" style="width:100%;margin-top:12px">Crear encargo</button>`}
+    <div class="row" style="margin-top:12px">
+      <button class="btn-ghost" type="button" data-action="editar-cita">Editar</button>
+      <button class="btn" type="button" data-action="cita-hecha">${appt.done ? "Reabrir" : "Marcar hecha"}</button>
+      <button class="btn-ghost" type="button" data-close="1">Cerrar</button>
+    </div>`;
 }
 
 function sketchTipo(job) {
@@ -1532,95 +1589,83 @@ function sketchDesc(job) {
 }
 
 function encargoFormHtml() {
+  // Layout literal del "Detalle de encargo" del sketch-circuito-encargo (también para Nuevo).
   const draft = ui.draft;
   if (!draft) return "";
   const job = draft.job;
   const lookup = findSync(draft.person, draft.phone, "");
   const blocked = syncBlocks(lookup);
   const existing = state.jobs.some((item) => item.id === job.id);
-  const tipo = sketchTipo(job);
-  const desc = sketchDesc(job);
-  if (!draft.full) {
-    return `
-    ${closeBtn()}
-    <h2>${existing ? "Encargo" : "Nuevo encargo"}</h2>
-    <label>Cliente
-      <input data-keep="encargo-person" data-bind="draft.person" data-render="1" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Nombre de la clienta">
-    </label>
-    <datalist id="clientas-list">${(state.clients || []).map((c) => `<option value="${escAttr(c.name || "")}"></option>`).join("")}</datalist>
-    <label>Teléfono<input data-keep="encargo-phone" data-bind="draft.phone" data-render="1" type="tel" value="${esc(draft.phone || "")}" placeholder="Teléfono"></label>
-    ${syncBannerHtml(lookup, "form")}
-    <label>Prenda / descripción<input data-keep="encargo-desc" data-sketch-desc value="${esc(desc)}" placeholder="Ej. Vestido de fiesta"></label>
-    <p class="meta">Tipo</p>
-    <div class="kinds">
-      <button type="button" class="kind ${tipo === "alteracion" ? "on" : ""}" data-sketch-tipo="alteracion">alteración</button>
-      <button type="button" class="kind ${tipo === "nuevo" ? "on" : ""}" data-sketch-tipo="nuevo">nuevo</button>
-    </div>
-    <label>Fecha entrega<input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}"></label>
-    <label>Notas<textarea data-keep="jnote" data-bind="job.note" rows="3" placeholder="Notas del encargo">${esc(job.note || "")}</textarea></label>
-    <p class="meta">Estado</p>
-    <div class="kinds">
-      ${["pendiente", "listo", "urgente"].map((id) => `<button type="button" class="kind ${statusOf(job) === id ? "on" : ""}" data-status="${id}">${id === "pendiente" ? "Pendiente" : id === "listo" ? "Listo" : "Urgente"}</button>`).join("")}
-    </div>
-    ${job.urgent ? `<button class="btn-ghost" type="button" data-num="urgency">Urgencia ${esc(money(amount(job.urgencyFee)))}</button>${padBlock("urgency")}` : ""}
-    ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
-    ${syncSaveNote(lookup)}
-    <div class="row"><button class="btn" type="button" data-action="guardar-encargo" ${blocked ? "disabled" : ""}>Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
-  }
-  const garments = job.garments || [];
+  const garments = (job.garments || []).filter((item) => item.kind || item.custom || item.photo || amount(item.price));
+  const presupuesto = amount(job.presupuesto) || garments.reduce((sum, item) => sum + amount(item.price), 0);
+  const urg = job.urgent ? amount(job.urgencyFee) || urgencyPrice() : 0;
+  const totalPagar = Math.max(0, presupuesto + urg - amount(job.deposit));
   return `
     ${closeBtn()}
-    <h2>Encargo</h2>
-    <label>Cliente<input data-keep="encargo-person" data-bind="draft.person" data-render="1" value="${esc(draft.person || "")}"></label>
-    <label>Teléfono<input data-keep="encargo-phone" data-bind="draft.phone" data-render="1" type="tel" value="${esc(draft.phone || "")}"></label>
+    <p class="kicker">${existing ? "Detalle de encargo" : "Nuevo encargo"}</p>
+    <h2 class="detalle-title">
+      <input class="name-inline" data-keep="encargo-person" data-bind="draft.person" data-render="1" list="clientas-list" value="${esc(draft.person || "")}" placeholder="Nombre de la clienta">
+      <button type="button" class="badge-cm ${job.picky ? "" : "ghost"}" data-action="toggle-cm" title="CM">CM</button>
+    </h2>
+    <datalist id="clientas-list">${(state.clients || []).map((c) => `<option value="${escAttr(c.name || "")}"></option>`).join("")}</datalist>
+    <input type="hidden" data-bind="draft.phone" value="${esc(draft.phone || "")}">
     ${syncBannerHtml(lookup, "form")}
-    <div class="row">
-      <label class="check"><input type="checkbox" data-bind="job.broughtShoes" ${job.broughtShoes ? "checked" : ""}> Trajo zapatos</label>
-      <label class="check"><input type="checkbox" data-bind="job.picky" ${job.picky ? "checked" : ""}> CM</label>
+    <p class="field-label">Prendas</p>
+    <div class="prendas-list">
+      ${(garments.length ? garments : [{ id: "empty", kind: "", custom: "", color: "", price: 0 }]).map((item) => `
+        <div class="prenda-row">
+          <label class="check tiny"><input type="checkbox" data-garment-done="${esc(item.id)}" ${item.done ? "checked" : ""} ${item.id === "empty" ? "disabled" : ""}></label>
+          <button class="prenda-kind" type="button" data-action="agregar-prenda">${esc(item.kind || item.custom ? garmentLabel(item) : "Elegir prenda")}</button>
+          <button class="color-wheel" type="button" data-pick-color="${esc(item.id === "empty" ? "" : item.id)}" aria-label="Color" title="Toca · abre cromático">
+            <span class="wheel"></span>
+            <span class="swatch mini" style="background:${escAttr(colorHex(item.color))}"></span>
+          </button>
+          ${item.id === "empty" ? `<span class="prenda-price">$0</span>` : `<button class="prenda-price" type="button" data-num="price" data-id="${esc(item.id)}">${esc(money(amount(item.price)))}</button>`}
+          ${item.id !== "empty" ? `<button class="btn-ghost tiny" type="button" data-drop-garment="${esc(item.id)}">×</button>` : ""}
+        </div>`).join("")}
+      <button class="btn sky add-prenda" type="button" data-action="agregar-prenda">+ Agregar prenda</button>
     </div>
-    <p class="kicker">Prenda y color</p>
-    <div class="prenda-color">
-      <div class="g-icons">
-        ${GROUPS.filter((g) => g.id !== "otro").map((g) => `<button type="button" class="g-icon ${g.sketch ? "sketch" : ""}" data-group="${g.id}"><img src="brand/${g.file}" alt=""><span>${esc(g.label)}</span></button>`).join("")}
-        <button type="button" class="g-icon" data-group="otro"><img src="brand/otro.png" alt=""><span>Otro</span></button>
-      </div>
-      <button class="color-side" type="button" data-action="color" aria-label="Color">
-        <span class="swatch big" style="background:${escAttr(colorHex(((garments.filter((item) => item.kind || item.custom).slice(-1)[0]) || {}).color))}"></span>
-        <span>Color</span>
+    ${ui.pad && ui.pad.kind === "price" ? padBlock("price") : ""}
+    <div class="grid-2 notas-medidas">
+      <button class="soft-box" type="button" data-action="notas">
+        <span class="meta">Notas</span>
+        <span>${esc(job.note || "Sin notas aún")}</span>
+      </button>
+      <button class="soft-box" type="button" data-action="medidas">
+        <span class="meta">Medidas</span>
+        <span>Abrir medidas</span>
       </button>
     </div>
-    <div class="cards">
-      ${garments.filter((item) => item.kind || item.custom).map((item) => `
-        <div class="card row-card">
-          <img src="brand/${groupOf(item.kind).file}" alt="" width="48" height="48">
-          <div>
-            <div class="who">${esc(garmentLabel(item))}</div>
-            <button class="btn-ghost" type="button" data-pick-color="${esc(item.id)}"><span class="swatch" style="display:inline-block;background:${escAttr(colorHex(item.color))}"></span> ${esc(item.color || "Color")}</button>
-            <button class="btn-ghost" type="button" data-num="price" data-id="${esc(item.id)}">Precio ${esc(money(amount(item.price)))}</button>
-          </div>
-          <button class="btn-ghost" type="button" data-drop-garment="${esc(item.id)}">Quitar</button>
-        </div>`).join("")}
+    <div class="grid-2 fechas-box">
+      <label class="soft-box on">Fecha de entrega
+        <input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}">
+        <input data-bind="job.dueTime" data-render="1" type="time" value="${esc(job.dueTime || "12:00")}">
+      </label>
+      <label class="soft-box">Fecha del evento
+        <input data-bind="job.eventDate" data-render="1" type="date" value="${esc(job.eventDate || "")}">
+      </label>
     </div>
-    ${padBlock("price")}
-    <button class="btn sky" type="button" data-action="agregar-prenda" style="width:100%;margin:8px 0">+ Agregar prenda</button>
-    ${photoButtons("garment", ((garments.filter((item) => item.kind || item.custom).slice(-1)[0]) || {}).id || "")}
-    <label>Notas<textarea data-keep="jnote" data-bind="job.note" rows="3">${esc(job.note || "")}</textarea></label>
-    <button class="btn-ghost" type="button" data-action="notas" style="width:100%">Hoja de notas</button>
-    <div class="grid-2">
-      <label>Fecha de entrega<input data-bind="job.dueDate" data-render="1" type="date" value="${esc(job.dueDate || "")}"></label>
-      <label>Hora<input data-bind="job.dueTime" data-render="1" type="time" value="${esc(job.dueTime || "12:00")}"></label>
+    <div class="row toggles">
+      <label class="check"><input type="checkbox" data-bind="job.broughtShoes" ${job.broughtShoes ? "checked" : ""}> Trajo zapatos</label>
+      <label class="check"><input type="checkbox" data-bind="job.urgent" data-render="1" ${job.urgent ? "checked" : ""}> Urgente</label>
     </div>
-    <label>Fecha del evento<input data-bind="job.eventDate" data-render="1" type="date" value="${esc(job.eventDate || "")}"></label>
-    <p class="meta">Estado</p>
-    <div class="kinds">
-      ${["pendiente", "listo", "urgente"].map((id) => `<button type="button" class="kind ${statusOf(job) === id ? "on" : ""}" data-status="${id}">${id === "pendiente" ? "Pendiente" : id === "listo" ? "Listo" : "Urgente"}</button>`).join("")}
+    <div class="money-grid">
+      <button type="button" data-num="presupuesto"><span class="meta">Presupuesto</span><b>${esc(money(presupuesto || amount(job.presupuesto)))}</b></button>
+      <button type="button" data-num="deposit"><span class="meta">Anticipo</span><b>${esc(money(amount(job.deposit)))}</b></button>
+      <button type="button" data-num="urgency" ${job.urgent ? "" : "disabled"}><span class="meta">Urgencia</span><b>${esc(money(urg))}</b></button>
     </div>
-    ${job.urgent ? `<button class="btn-ghost" type="button" data-num="urgency">Urgencia ${esc(money(amount(job.urgencyFee)))}</button>${padBlock("urgency")}` : ""}
-    <button class="btn-ghost" type="button" data-num="deposit">Anticipo ${esc(money(amount(job.deposit)))}</button>${padBlock("deposit")}
-    <div class="row"><button class="btn-ghost" type="button" data-action="medidas">Medidas</button><button class="btn-ghost" type="button" data-action="recibo">Recibo</button></div>
+    ${ui.pad && ["presupuesto", "deposit", "urgency"].includes(ui.pad.kind) ? padBlock() : ""}
+    <p class="total-pay">Total a pagar <b>${esc(money(totalPagar))}</b></p>
     ${ui.formError ? `<p class="warn">${esc(ui.formError)}</p>` : ""}
     ${syncSaveNote(lookup)}
-    <div class="row"><button class="btn" type="button" data-action="guardar-encargo" ${blocked ? "disabled" : ""}>Guardar</button><button class="btn-ghost" type="button" data-close="1">Cancelar</button></div>`;
+    <div class="row wrap-actions">
+      <button class="btn-ghost" type="button" data-action="recibo">Recibo</button>
+      <button class="btn-ghost" type="button" data-action="notas">Notas</button>
+      <button class="btn-ghost" type="button" data-action="medidas">Medidas</button>
+      ${existing ? `<button class="btn" type="button" data-action="entregar">${job.status === "entregado" ? "Reabrir" : "Marcar entregado"}</button>` : ""}
+      <button class="btn" type="button" data-action="guardar-encargo" ${blocked ? "disabled" : ""}>${existing ? "Guardar" : "Guardar"}</button>
+      <button class="btn plum" type="button" data-close="1">${existing ? "Cerrar" : "Cancelar"}</button>
+    </div>`;
 }
 
 function escAttr(value) {
@@ -1981,6 +2026,7 @@ function makeJob(clientId) {
     price: 0,
     deposit: 0,
     urgencyFee: 0,
+    presupuesto: 0,
     urgent: false,
     listo: false,
     broughtShoes: false,
@@ -2021,7 +2067,7 @@ function openEncargo(id, full) {
     phone: client ? client.phone || "" : "",
     custom: "",
     job,
-    full: full || !!existing,
+    full: true,
   };
   ui.sample = null;
   ui.formError = "";
@@ -2165,6 +2211,16 @@ function onField(event) {
     }
     return;
   }
+  if (el.dataset.garmentDone != null) {
+    const job = moneyJob();
+    if (!job || el.dataset.garmentDone === "empty") return;
+    const item = (job.garments || []).find((garment) => garment.id === el.dataset.garmentDone);
+    if (item) {
+      item.done = !!el.checked;
+      if (editingIsLive(job)) persist();
+    }
+    return;
+  }
   if (el.dataset.hue != null) {
     const garment = currentGarment(moneyJob());
     if (garment) {
@@ -2211,6 +2267,10 @@ function onField(event) {
   if (el.dataset.bind.startsWith("job.") && ui.draft && ui.draft.job) {
     const key = el.dataset.bind.slice(4);
     ui.draft.job[key] = value;
+    if (key === "urgent" && value && !amount(ui.draft.job.urgencyFee)) {
+      ui.draft.job.urgencyFee = urgencyPrice();
+    }
+    if (key === "urgent" && !value) ui.draft.job.urgencyFee = 0;
   }
   if (["draft.person", "draft.phone", "cita.person", "cita.phone"].includes(el.dataset.bind)) {
     const ctx = syncContext();
@@ -2317,8 +2377,10 @@ function openAppt(id) {
     openResumen(appt.jobId);
     return;
   }
-  // Sin encargo ligado: abrir nuevo encargo (ya no hay pantalla Detalle de cita).
-  openEncargo(null, false);
+  // Cita sin encargo: resumen compacto (no el formulario largo).
+  ui.overlay = "cita-detalle";
+  ui.fab = false;
+  render();
 }
 
 function openClient(id) {
@@ -2515,6 +2577,7 @@ function openPad(btn) {
   }
   if (kind === "deposit" && job) { value = String(job.deposit || ""); label = "Anticipo"; }
   if (kind === "urgency" && job) { value = String(job.urgencyFee || ""); label = "Urgencia"; }
+  if (kind === "presupuesto" && job) { value = String(job.presupuesto || ""); label = "Presupuesto"; }
   if (kind === "urgencyPrice") { value = String(urgencyPrice()); label = "Precio de urgencia"; }
   if (kind === "measure" && job) {
     value = (job.measures && job.measures[btn.dataset.key]) || "";
@@ -2537,6 +2600,7 @@ function writePad(value) {
   if (!job) return;
   if (pad.kind === "deposit") job.deposit = value;
   if (pad.kind === "urgency") job.urgencyFee = value;
+  if (pad.kind === "presupuesto") job.presupuesto = value;
   if (pad.kind === "measure") {
     job.measures = job.measures || {};
     job.measures[pad.key] = value;
@@ -2678,6 +2742,16 @@ function onAction(action) {
   if (action === "agregar-prenda") {
     ui.pickGroup = null;
     openOverlay("selector", ui.overlay === "cromatico" ? (ui.backOverlay || "encargo") : (ui.overlay || "encargo"));
+    return;
+  }
+  if (action === "toggle-cm") {
+    const job = moneyJob();
+    if (job) {
+      job.picky = !job.picky;
+      if (ui.draft && ui.draft.job) ui.draft.job.picky = job.picky;
+      if (editingIsLive(job)) persist();
+      render();
+    }
     return;
   }
   if (action === "lapiz") { ui.inkOn = !ui.inkOn; render(); return; }

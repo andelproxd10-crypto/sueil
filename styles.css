@@ -288,11 +288,18 @@ input[type="range"] { width: 100%; accent-color: var(--mid); height: 36px; }
   min-width: 42px;
   height: 32px;
   padding: 0 8px;
+  border: 0;
   border-radius: 10px;
   background: var(--plum);
   color: #fff;
   font-weight: 750;
   letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.badge-cm.ghost {
+  background: transparent;
+  color: var(--plum);
+  border: 1.5px dashed var(--plum);
 }
 .late {
   background: var(--deep);
@@ -938,6 +945,142 @@ canvas.ink { height: 140px; }
 .resumen-dates { text-align: right; color: var(--muted); font-size: 0.95rem; line-height: 1.35; }
 .wrap-actions { flex-wrap: wrap; }
 
+/* Detalle / Nuevo encargo (sketch circuito) */
+.detalle-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+}
+.name-inline {
+  flex: 1 1 180px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 1.55rem;
+  font-weight: 750;
+  color: var(--navy);
+  padding: 0;
+  outline: none;
+}
+.field-label {
+  margin: 14px 0 8px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.prendas-list { display: grid; gap: 8px; margin-bottom: 8px; }
+.prenda-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  padding: 8px 10px;
+  min-height: 56px;
+}
+.check.tiny { min-height: 36px; gap: 0; margin: 0; }
+.check.tiny input { width: 22px; height: 22px; }
+.prenda-kind {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 700;
+  color: var(--navy);
+  padding: 4px 0;
+  min-height: 40px;
+}
+.prenda-price, .btn-ghost.tiny {
+  border: 0;
+  background: transparent;
+  font-weight: 750;
+  color: var(--deep);
+  min-height: 40px;
+  padding: 4px 6px;
+}
+.btn-ghost.tiny { color: var(--muted); font-size: 1.2rem; }
+.color-wheel {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.color-wheel .wheel {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: conic-gradient(#e74c3c, #f1c40f, #2ecc71, #3498db, #9b59b6, #e74c3c);
+}
+.color-wheel .swatch.mini {
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(16, 63, 99, 0.2);
+}
+.add-prenda { width: 100%; margin-top: 4px; }
+.soft-box {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px 14px;
+  min-height: 72px;
+  color: var(--navy);
+  font-weight: 650;
+}
+.soft-box .meta { color: var(--muted); font-weight: 700; font-size: 0.9rem; }
+.soft-box.on { border-color: var(--mid); background: #f4fafc; }
+.soft-box input[type="date"],
+.soft-box input[type="time"] {
+  width: 100%;
+  margin: 0;
+  border: 1.5px solid var(--sky);
+  border-radius: 12px;
+  min-height: 48px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.fechas-box, .notas-medidas { margin: 12px 0; }
+.toggles { margin: 8px 0 12px; }
+.money-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 0;
+}
+.money-grid button {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px;
+  min-height: 72px;
+  color: var(--navy);
+}
+.money-grid button:disabled { opacity: 0.45; }
+.money-grid .meta { color: var(--muted); font-weight: 700; font-size: 0.9rem; }
+.money-grid b { font-size: 1.2rem; }
+.total-pay {
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 12px 0 8px;
+}
+.total-pay b { font-size: 1.45rem; }
+
 .rise { animation: rise 0.18s ease; }
 .sheet { animation: sheetIn 0.16s ease; }
 .fab-menu button { animation: rise 0.14s ease backwards; }
@@ -977,6 +1120,8 @@ canvas.ink { height: 140px; }
 
 @media (max-width: 900px) {
   .hoy-grid, .split, .arch-quick, .grid-2, .photo-row, .cards.two { grid-template-columns: 1fr; }
+  .money-grid { grid-template-columns: 1fr; }
+  .prenda-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
   .g-icons { grid-template-columns: repeat(2, 1fr); }
   .arch-tabs { grid-template-columns: repeat(3, 1fr); }
   .dock-btn { font-size: 10px; }
